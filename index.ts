@@ -274,7 +274,7 @@ function exportProject() {
             const f = state.edges.find(e => e.fromId === n.id && e.type === 'false');
             gml += `// Condition Scope #${n.id}\n`;
             gml += `if (${n.code || 'true'}) {\n`;
-            if(t) gml += `    ds_graph_edge_add(_g, _n[${n.id}], _n[${t.toId}], 1, true);\n`;
+            if(t) gml += `    ds_graph_edge_add(_g, _n[${n.id}], _n[${t.toId}], 0, true);\n`;
             gml += `} else {\n`;
             if(f) gml += `    ds_graph_edge_add(_g, _n[${n.id}], _n[${f.toId}], 0, true);\n`;
             gml += `}\n\n`;
