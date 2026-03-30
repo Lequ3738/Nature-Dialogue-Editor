@@ -2,19 +2,19 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>GM8 Graph Editor Pro - 无边界作用域版</title>
+    <title>对话编辑器</title>
     <link href="index.css" rel="stylesheet">
-    <script src="index.ts" defer></script>
 </head>
 <body>
+<div id="root">
 
 <div id="toolbar">
     <button onclick="addObject('node')">+ 对话节点</button>
     <button onclick="addObject('condition')" style="background: #e67e22;">+ 条件判定</button>
     <button onclick="addObject('comment')" style="background: #5865f2;">+ 注释区域</button>
     <div style="flex-grow: 1;"></div>
-    <label class="file-label">导入 GML 工程 <input type="file" id="importInput" hidden onchange="importProject(this)"></label>
-    <button onclick="exportProject()" style="background: #43b581;">导出 GML 系统</button>
+    <label class="file-label">导入工程文件 <input type="file" id="importInput" hidden onchange="importProject(this)"></label>
+    <button onclick="exportProject()" style="background: #43b581;">导出工程文件</button>
 </div>
 
 <div id="viewport">
@@ -34,16 +34,16 @@
         <h3 id="m-title" style="margin:0">节点配置</h3>
         <div class="lang-box">
             <div style="display:flex;flex-direction:column;gap:5px">
-                <label style="font-size:12px;color:#888">中文 (lang_cn)</label>
+                <label style="font-size:12px;color:#888">中文</label>
                 <textarea id="m-cn" rows="4"></textarea>
             </div>
             <div style="display:flex;flex-direction:column;gap:5px">
-                <label style="font-size:12px;color:#888">英文 (lang_en)</label>
+                <label style="font-size:12px;color:#888">英文</label>
                 <textarea id="m-en" rows="4"></textarea>
             </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:5px">
-            <label style="font-size:12px;color:#888">执行代码 / 条件表达式 (GML)</label>
+            <label style="font-size:12px;color:#888">执行代码</label>
             <textarea id="m-code" rows="5"></textarea>
         </div>
         <div class="color-row">
@@ -58,5 +58,7 @@
         </div>
     </div>
 </div>
+</div>
+<script type="module" src="/src/renderer/main.tsx"></script>
 </body>
 </html>
