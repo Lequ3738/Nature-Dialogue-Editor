@@ -195,6 +195,7 @@ export default function App() {
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const [minimapSize, setMinimapSize] = useState(() => ({ w: 260, h: 180 }))
   const minimapResizeRef = useRef<null | { edge: 'left' | 'top'; ox: number; oy: number; w: number; h: number }>(null)
+  const [edgeMenu, setEdgeMenu] = useState<null | { fromId: number; x: number; y: number }>(null)
 
   const [windowSize, setWindowSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
   const zoomPercent = Math.round(state.view.zoom * 100)
@@ -268,6 +269,14 @@ export default function App() {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [fileMenuOpen])
+
+  useEffect(() => {
+    const onDown = () => {
+      if (edgeMenu) setEdgeMenu(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [edgeMenu])
 
   useEffect(() => {
     const onResize = () => setWindowSize({ w: window.innerWidth, h: window.innerHeight })
@@ -405,6 +414,27 @@ export default function App() {
 
     ctx.clearRect(0, 0, 10000, 10000)
 
+    const drawArrowHead = (tipX: number, tipY: number, angleRad: number, size: number) => {
+      // 把箭头尖端稍微从节点边缘“退后”，避免视觉上压在边框上
+      const inset = Math.min(6, size * 0.35)
+      const tipInsetX = tipX - Math.cos(angleRad) * inset
+      const tipInsetY = tipY - Math.sin(angleRad) * inset
+
+      const backX = tipInsetX - Math.cos(angleRad) * size
+      const backY = tipInsetY - Math.sin(angleRad) * size
+      const leftX = backX + Math.cos(angleRad + Math.PI / 2) * (size * 0.6)
+      const leftY = backY + Math.sin(angleRad + Math.PI / 2) * (size * 0.6)
+      const rightX = backX + Math.cos(angleRad - Math.PI / 2) * (size * 0.6)
+      const rightY = backY + Math.sin(angleRad - Math.PI / 2) * (size * 0.6)
+      ctx.beginPath()
+      ctx.moveTo(tipInsetX, tipInsetY)
+      ctx.lineTo(leftX, leftY)
+      ctx.lineTo(rightX, rightY)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+    }
+
     state.edges.forEach((edge) => {
       const from = state.nodes.find((n) => n.id === edge.fromId)
       const to = state.nodes.find((n) => n.id === edge.toId)
@@ -416,11 +446,30 @@ export default function App() {
       const startY = start.y
       const endX = end.x
       const endY = end.y
-      const curveStrength = Math.min(120, Math.max(40, Math.hypot(endX - startX, endY - startY) * 0.35))
-      const cp1X = startX + (endX - startX) * 0.2
-      const cp1Y = startY + (endY > startY ? curveStrength : -curveStrength)
-      const cp2X = endX - (endX - startX) * 0.2
-      const cp2Y = endY - (endY > startY ? curveStrength : -curveStrength)
+      const dx = endX - startX
+      const dy = endY - startY
+      const dist = Math.hypot(dx, dy)
+      const curveStrength = Math.min(180, Math.max(60, dist * 0.35))
+      const horizontal = Math.abs(dx) >= Math.abs(dy)
+
+      let cp1X = startX
+      let cp1Y = startY
+      let cp2X = endX
+      let cp2Y = endY
+
+      if (horizontal) {
+        const s = dx >= 0 ? 1 : -1
+        cp1X = startX + s * curveStrength
+        cp1Y = startY
+        cp2X = endX - s * curveStrength
+        cp2Y = endY
+      } else {
+        const s = dy >= 0 ? 1 : -1
+        cp1X = startX
+        cp1Y = startY + s * curveStrength
+        cp2X = endX
+        cp2Y = endY - s * curveStrength
+      }
 
       ctx.beginPath()
       ctx.moveTo(startX, startY)
@@ -433,10 +482,14 @@ export default function App() {
       ctx.lineWidth = 3
       ctx.stroke()
 
+      // Arrow head at end (directed graph)
       ctx.fillStyle = ctx.strokeStyle as string
-      ctx.beginPath()
-      ctx.arc(endX, endY, 5, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.strokeStyle = ctx.fillStyle as string
+      ctx.lineWidth = 1.5
+      const tanX = endX - cp2X
+      const tanY = endY - cp2Y
+      const angle = Math.atan2(tanY, tanX)
+      drawArrowHead(endX, endY, angle, 14)
     })
   }, [state.edges, state.nodes])
 
@@ -586,11 +639,30 @@ export default function App() {
       const endX = endMini.x
       const endY = endMini.y
 
-      const curve = Math.min(30, Math.max(10, Math.hypot(endX - startX, endY - startY) * 0.25))
-      const cp1X = startX + (endX - startX) * 0.2
-      const cp2X = endX - (endX - startX) * 0.2
-      const cp1Y = startY + (endY > startY ? curve : -curve)
-      const cp2Y = endY - (endY > startY ? curve : -curve)
+      const dx = endX - startX
+      const dy = endY - startY
+      const dist = Math.hypot(dx, dy)
+      const curveStrength = Math.min(40, Math.max(12, dist * 0.35))
+      const horizontal = Math.abs(dx) >= Math.abs(dy)
+
+      let cp1X = startX
+      let cp1Y = startY
+      let cp2X = endX
+      let cp2Y = endY
+
+      if (horizontal) {
+        const s = dx >= 0 ? 1 : -1
+        cp1X = startX + s * curveStrength
+        cp1Y = startY
+        cp2X = endX - s * curveStrength
+        cp2Y = endY
+      } else {
+        const s = dy >= 0 ? 1 : -1
+        cp1X = startX
+        cp1Y = startY + s * curveStrength
+        cp2X = endX
+        cp2Y = endY - s * curveStrength
+      }
 
       ctx.beginPath()
       ctx.moveTo(startX, startY)
@@ -600,9 +672,29 @@ export default function App() {
       ctx.stroke()
 
       ctx.fillStyle = ctx.strokeStyle as any
+      // Arrow head
+      const tanX = endX - cp2X
+      const tanY = endY - cp2Y
+      const angle = Math.atan2(tanY, tanX)
+      const size = Math.max(6, 12 * scale)
+      const inset = Math.min(3, size * 0.35)
+      const tipX = endX - Math.cos(angle) * inset
+      const tipY = endY - Math.sin(angle) * inset
+      const backX = tipX - Math.cos(angle) * size
+      const backY = tipY - Math.sin(angle) * size
+      const leftX = backX + Math.cos(angle + Math.PI / 2) * (size * 0.6)
+      const leftY = backY + Math.sin(angle + Math.PI / 2) * (size * 0.6)
+      const rightX = backX + Math.cos(angle - Math.PI / 2) * (size * 0.6)
+      const rightY = backY + Math.sin(angle - Math.PI / 2) * (size * 0.6)
       ctx.beginPath()
-      ctx.arc(endX, endY, Math.max(1.5, 4 * scale), 0, Math.PI * 2)
+      ctx.moveTo(tipX, tipY)
+      ctx.lineTo(leftX, leftY)
+      ctx.lineTo(rightX, rightY)
+      ctx.closePath()
       ctx.fill()
+      ctx.strokeStyle = ctx.fillStyle as any
+      ctx.lineWidth = Math.max(1, 1.2 * scale)
+      ctx.stroke()
     }
 
     // Comment boxes (behind edges)
@@ -1158,6 +1250,15 @@ export default function App() {
                             e.stopPropagation()
                             setState((prev) => startConnect(prev, n.id, 'true'))
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setState((prev) => ({
+                              ...prev,
+                              edges: prev.edges.filter((ed) => !(ed.fromId === n.id && ed.type === 'true')),
+                            }))
+                          }}
+                          title="右键删除 TRUE 连线"
                         >
                           TRUE
                         </button>
@@ -1167,6 +1268,15 @@ export default function App() {
                             e.stopPropagation()
                             setState((prev) => startConnect(prev, n.id, 'false'))
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setState((prev) => ({
+                              ...prev,
+                              edges: prev.edges.filter((ed) => !(ed.fromId === n.id && ed.type === 'false')),
+                            }))
+                          }}
+                          title="右键删除 FALSE 连线"
                         >
                           FALSE
                         </button>
@@ -1179,6 +1289,13 @@ export default function App() {
                             e.stopPropagation()
                             setState((prev) => startConnect(prev, n.id, 'default'))
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            // 普通节点允许多条连线：弹出菜单让用户自由选择删哪条
+                            setEdgeMenu({ fromId: n.id, x: e.clientX, y: e.clientY })
+                          }}
+                          title="右键删除 NEXT 连线"
                         >
                           NEXT →
                         </button>
@@ -1191,6 +1308,82 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {edgeMenu ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: edgeMenu.x,
+            top: edgeMenu.y,
+            zIndex: 4000,
+            background: 'var(--panel)',
+            color: 'var(--text)',
+            border: '1px solid color-mix(in srgb, var(--panel-border) 80%, transparent)',
+            borderRadius: 8,
+            boxShadow: 'var(--shadow-strong)',
+            padding: 6,
+            minWidth: 170,
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation()
+          }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.85, padding: '4px 8px' }}>删除 NEXT 连线</div>
+          {state.edges.filter((ed) => ed.fromId === edgeMenu.fromId && ed.type === 'default').length === 0 ? (
+            <div style={{ fontSize: 12, opacity: 0.75, padding: '6px 8px' }}>暂无连线</div>
+          ) : (
+            state.edges
+              .filter((ed) => ed.fromId === edgeMenu.fromId && ed.type === 'default')
+              .map((ed, idx) => (
+                <button
+                  key={`${ed.fromId}-${ed.toId}-${idx}`}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    boxShadow: 'none',
+                    fontWeight: 500,
+                  }}
+                  onClick={() => {
+                    setState((prev) => ({
+                      ...prev,
+                      edges: prev.edges.filter((e) => !(e.fromId === ed.fromId && e.toId === ed.toId && e.type === ed.type)),
+                    }))
+                    setEdgeMenu(null)
+                  }}
+                >
+                  删除到 #{ed.toId}
+                </button>
+              ))
+          )}
+          {state.edges.some((ed) => ed.fromId === edgeMenu.fromId && ed.type === 'default') ? (
+            <button
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '8px 10px',
+                borderRadius: 6,
+                background: 'transparent',
+                color: '#f04747',
+                boxShadow: 'none',
+                fontWeight: 600,
+              }}
+              onClick={() => {
+                setState((prev) => ({
+                  ...prev,
+                  edges: prev.edges.filter((e) => !(e.fromId === edgeMenu.fromId && e.type === 'default')),
+                }))
+                setEdgeMenu(null)
+              }}
+            >
+              清除全部
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div id="minimap" style={{ width: minimapSize.w, height: minimapSize.h }}>
         <canvas

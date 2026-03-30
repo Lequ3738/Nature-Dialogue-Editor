@@ -90,10 +90,18 @@ export function startConnect(state: EditorState, destinationNodeId: number, port
 
   const { fromId, type } = state.connecting
   if (fromId !== destinationNodeId) {
-    const nextEdges: Edge[] = state.edges.filter(
-      (edge) => !(edge.fromId === fromId && edge.type === type),
-    )
-    nextEdges.push({ fromId, toId: destinationNodeId, type })
+    // 条件节点：true/false 各只能有一条（覆盖旧的同类型连线）
+    // 普通节点：default 允许多条（不覆盖）
+    let nextEdges: Edge[] = state.edges
+    if (type === 'true' || type === 'false') {
+      nextEdges = nextEdges.filter((edge) => !(edge.fromId === fromId && edge.type === type))
+    }
+
+    // 防止重复添加同一条连线
+    const exists = nextEdges.some((e) => e.fromId === fromId && e.toId === destinationNodeId && e.type === type)
+    if (!exists) {
+      nextEdges = [...nextEdges, { fromId, toId: destinationNodeId, type }]
+    }
     return { ...state, edges: nextEdges, connecting: null }
   }
 
