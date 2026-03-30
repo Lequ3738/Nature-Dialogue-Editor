@@ -18,6 +18,7 @@ export interface CommentBox {
   w: number
   h: number
   text: string
+  color: string
 }
 
 export interface Edge {

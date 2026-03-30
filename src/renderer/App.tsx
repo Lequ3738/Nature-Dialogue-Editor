@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { DragTarget, EdgeType, EditorState, Resizing } from './editorTypes'
+import type { CommentBox, DragTarget, Edge, EdgeType, EditorState, Node, Resizing } from './editorTypes'
 import { createInitialState } from './editorTypes'
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from './editorLogic'
 import fs from 'node:fs'
+import CodeEditor, { type HighlightRule } from './CodeEditor'
 
 type ModalDraft = {
   cn: string
@@ -30,6 +31,44 @@ function ensureGmlName(name: string): string {
   const trimmed = (name || '').trim()
   if (!trimmed) return 'dialog_system.gml'
   return trimmed.toLowerCase().endsWith('.gml') ? trimmed : `${trimmed}.gml`
+}
+
+function isFilePickerCancelled(err: unknown): boolean {
+  const e = err as any
+  const name = typeof e?.name === 'string' ? e.name : ''
+  // File System Access API: user cancel is usually AbortError
+  if (name === 'AbortError' || name === 'NotAllowedError') return true
+  // Sometimes DOMException uses a numeric code.
+  if (typeof e?.code === 'number' && e.code === 20) return true
+  return false
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = (hex || '').trim().replace('#', '')
+  if (h.length === 3) {
+    const r = parseInt(h[0] + h[0], 16)
+    const g = parseInt(h[1] + h[1], 16)
+    const b = parseInt(h[2] + h[2], 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  if (h.length >= 6) {
+    const r = parseInt(h.slice(0, 2), 16)
+    const g = parseInt(h.slice(2, 4), 16)
+    const b = parseInt(h.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return `rgba(0, 0, 0, ${alpha})`
+}
+
+function getIpcRenderer(): any | null {
+  try {
+    const req = (window as any).require
+    if (typeof req !== 'function') return null
+    const electron = req('electron')
+    return electron?.ipcRenderer ?? null
+  } catch {
+    return null
+  }
 }
 
 function getNodeAnchor(
@@ -80,6 +119,22 @@ export default function App() {
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draft, setDraft] = useState<ModalDraft>({ cn: '', en: '', code: '', color: '#7289da' })
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [commentDraft, setCommentDraft] = useState<string>('')
+  const [commentColorDraft, setCommentColorDraft] = useState<string>('#5865f2')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [highlightRules, setHighlightRules] = useState<HighlightRule[]>(() => {
+    try {
+      const raw = localStorage.getItem('dialogueEditor.highlightRules')
+      if (!raw) return [{ pattern: 'if', color: '#3b82f6' }, { pattern: 'function', color: '#a855f7' }]
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter(Boolean)
+    } catch {
+      return [{ pattern: 'if', color: '#3b82f6' }, { pattern: 'function', color: '#a855f7' }]
+    }
+  })
+  const [highlightRulesText, setHighlightRulesText] = useState<string>('')
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const lineCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -87,13 +142,33 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const fileMenuRef = useRef<HTMLDivElement | null>(null)
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
+  const [minimapSize, setMinimapSize] = useState(() => ({ w: 260, h: 180 }))
+  const minimapResizeRef = useRef<null | { edge: 'left' | 'top'; ox: number; oy: number; w: number; h: number }>(null)
 
   const [windowSize, setWindowSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
   const zoomPercent = Math.round(state.view.zoom * 100)
+  const isNewUntitled = currentFileName === '新文件' && !currentFilePath && !currentFileHandle
+  const hasWorkspaceContent = state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0
+  const isNewEmpty = isNewUntitled && !hasWorkspaceContent
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('dialogueEditor.highlightRules', JSON.stringify(highlightRules))
+    } catch {
+      // ignore
+    }
+  }, [highlightRules])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--view-x', String(state.view.x))
+    root.style.setProperty('--view-y', String(state.view.y))
+    root.style.setProperty('--view-zoom', String(state.view.zoom))
+  }, [state.view.x, state.view.y, state.view.zoom])
 
   useEffect(() => {
     if (firstStateRef.current) {
@@ -104,12 +179,20 @@ export default function App() {
       suppressDirtyRef.current = false
       return
     }
+    // 新文件且空白时，不认为是已修改（例如只做了平移/缩放）。
+    if (isNewEmpty) return
     setIsDirty(true)
   }, [state])
 
   useEffect(() => {
     const titleName = currentFileName || '新文件'
-    document.title = `${isDirty ? '*' : ''}${titleName} - Dialogue Editor`
+    document.title = `${titleName}${isDirty ? '*' : ''} - 对话编辑器`
+  }, [currentFileName, isDirty])
+
+  useEffect(() => {
+    const ipc = getIpcRenderer()
+    if (!ipc) return
+    ipc.send('editor:dirty', { dirty: isDirty, fileName: currentFileName })
   }, [currentFileName, isDirty])
 
   useEffect(() => {
@@ -141,6 +224,36 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const cur = minimapResizeRef.current
+      if (!cur) return
+      const minW = 200
+      const minH = 140
+      const maxW = 520
+      const maxH = 420
+
+      if (cur.edge === 'left') {
+        const dx = cur.ox - e.clientX
+        const nextW = Math.max(minW, Math.min(maxW, cur.w + dx))
+        setMinimapSize((s) => ({ ...s, w: nextW }))
+      } else {
+        const dy = cur.oy - e.clientY
+        const nextH = Math.max(minH, Math.min(maxH, cur.h + dy))
+        setMinimapSize((s) => ({ ...s, h: nextH }))
+      }
+    }
+    const onUp = () => {
+      minimapResizeRef.current = null
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
   // Initialize canvas sizes.
   useEffect(() => {
     if (lineCanvasRef.current) {
@@ -148,16 +261,17 @@ export default function App() {
       lineCanvasRef.current.height = 10000
     }
     if (minimapCanvasRef.current) {
-      minimapCanvasRef.current.width = 180
-      minimapCanvasRef.current.height = 130
+      const dpr = window.devicePixelRatio || 1
+      minimapCanvasRef.current.width = minimapSize.w * dpr
+      minimapCanvasRef.current.height = minimapSize.h * dpr
     }
-  }, [])
+  }, [minimapSize.h, minimapSize.w])
 
   const connectingFromId = state.connecting?.fromId ?? null
 
   const minimapMeta = useMemo(() => {
-    const W = 180
-    const H = 130
+    const W = minimapSize.w
+    const H = minimapSize.h
     const pad = 10
 
     let minX = 0
@@ -204,10 +318,16 @@ export default function App() {
     const worldW = windowSize.w / state.view.zoom
     const worldH = windowSize.h / state.view.zoom
 
-    const viewLeft = worldLeft * scale + offsetX
-    const viewTop = worldTop * scale + offsetY
-    const viewW = worldW * scale
-    const viewH = worldH * scale
+    let viewLeft = worldLeft * scale + offsetX
+    let viewTop = worldTop * scale + offsetY
+    let viewW = worldW * scale
+    let viewH = worldH * scale
+
+    // Clamp viewport indicator inside minimap.
+    viewW = Math.min(W, Math.max(0, viewW))
+    viewH = Math.min(H, Math.max(0, viewH))
+    viewLeft = Math.min(W - viewW, Math.max(0, viewLeft))
+    viewTop = Math.min(H - viewH, Math.max(0, viewTop))
 
     return {
       W,
@@ -218,7 +338,7 @@ export default function App() {
       bounds: { minX, minY, maxX, maxY },
       viewRect: { left: viewLeft, top: viewTop, width: viewW, height: viewH },
     }
-  }, [state.nodes, state.comments, state.view.x, state.view.y, state.view.zoom, windowSize.w, windowSize.h])
+  }, [minimapSize.h, minimapSize.w, state.nodes, state.comments, state.view.x, state.view.y, state.view.zoom, windowSize.w, windowSize.h])
 
   const minimapViewStyle = useMemo(
     () =>
@@ -275,23 +395,178 @@ export default function App() {
     })
   }, [state.edges, state.nodes])
 
-  // Draw minimap whenever nodes/comments change.
+  // Draw minimap: render a scaled snapshot of the current workspace.
   useEffect(() => {
     const canvas = minimapCanvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    ctx.clearRect(0, 0, 180, 130)
+    const dpr = window.devicePixelRatio || 1
+    const W = minimapMeta.W
+    const H = minimapMeta.H
     const { scale, offsetX, offsetY } = minimapMeta
 
-    ctx.fillStyle = theme === 'light' ? '#64748b' : '#555'
-    state.nodes.forEach((n) => ctx.fillRect(n.x * scale + offsetX, n.y * scale + offsetY, 5, 4))
-    ctx.strokeStyle = theme === 'light' ? '#94a3b8' : '#333'
-    state.comments.forEach((c) =>
-      ctx.strokeRect(c.x * scale + offsetX, c.y * scale + offsetY, c.w * scale, c.h * scale),
-    )
-  }, [state.nodes, state.comments, minimapMeta, theme])
+    // Reset transform and clear using physical pixels.
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // Draw in CSS pixels.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+    // Background
+    ctx.fillStyle = theme === 'light' ? '#f8fafc' : 'rgba(0,0,0,0.55)'
+    ctx.fillRect(0, 0, W, H)
+
+    // Grid (based on main grid spacing)
+    const worldGrid = 40
+    const miniGrid = worldGrid * scale
+    const gridStep = Math.max(4, Math.min(14, miniGrid))
+    const dot = theme === 'light' ? 'rgba(148,163,184,0.55)' : 'rgba(148,163,184,0.35)'
+    ctx.fillStyle = dot
+    const xStart = 0
+    const yStart = 0
+    for (let x = xStart; x <= W; x += gridStep) {
+      for (let y = yStart; y <= H; y += gridStep) {
+        ctx.fillRect(x, y, 1, 1)
+      }
+    }
+
+    const worldToMini = (x: number, y: number) => ({
+      x: x * scale + offsetX,
+      y: y * scale + offsetY,
+    })
+
+    const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
+      const rr = Math.min(r, w / 2, h / 2)
+      ctx.beginPath()
+      ctx.moveTo(x + rr, y)
+      ctx.arcTo(x + w, y, x + w, y + h, rr)
+      ctx.arcTo(x + w, y + h, x, y + h, rr)
+      ctx.arcTo(x, y + h, x, y, rr)
+      ctx.arcTo(x, y, x + w, y, rr)
+      ctx.closePath()
+    }
+
+    const drawNode = (n: Node, isConnecting: boolean) => {
+      const { x, y } = worldToMini(n.x, n.y)
+      const w = NODE_WIDTH * scale
+      const h = NODE_HEIGHT * scale
+      const r = 10 * scale
+      const headerH = 30 * scale
+      const footerH = 26 * scale
+
+      // Node body
+      ctx.fillStyle = theme === 'light' ? '#ffffff' : '#2f3136'
+      roundRect(x, y, w, h, r)
+      ctx.fill()
+
+      // Border
+      ctx.lineWidth = Math.max(1, 2 * scale)
+      ctx.strokeStyle = n.color
+      ctx.stroke()
+
+      // Header stripe
+      ctx.fillStyle = theme === 'light' ? 'rgba(59,130,246,0.06)' : 'rgba(255,255,255,0.06)'
+      ctx.fillRect(x, y, w, headerH)
+
+      // Footer stripe
+      ctx.fillStyle = theme === 'light' ? 'rgba(59,130,246,0.05)' : 'rgba(255,255,255,0.04)'
+      ctx.fillRect(x, y + h - footerH, w, footerH)
+
+      // Ports (small indicators)
+      const portY = y + h - footerH + footerH / 2
+      if (n.type === 'condition') {
+        const leftX = x + w * 0.25
+        const rightX = x + w * 0.75
+        ctx.fillStyle = hasEdge(state, n.id, 'true') ? '#43b581' : n.color
+        ctx.beginPath()
+        ctx.arc(leftX, portY, Math.max(1.5, 3.5 * scale), 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.fillStyle = hasEdge(state, n.id, 'false') ? '#f04747' : n.color
+        ctx.beginPath()
+        ctx.arc(rightX, portY, Math.max(1.5, 3.5 * scale), 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        const midX = x + w * 0.5
+        ctx.fillStyle = isConnecting ? '#f1c40f' : n.color
+        ctx.beginPath()
+        ctx.arc(midX, portY, Math.max(1.5, 3.5 * scale), 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+
+    const drawComment = (c: CommentBox) => {
+      const { x, y } = worldToMini(c.x, c.y)
+      const w = c.w * scale
+      const h = c.h * scale
+      const r = 6 * scale
+
+      // Fill (transparent)
+      ctx.fillStyle = theme === 'light' ? 'rgba(59,130,246,0.03)' : 'rgba(255,255,255,0.02)'
+      roundRect(x, y, w, h, r)
+      ctx.fill()
+
+      // Border dashed
+      ctx.setLineDash([6 * scale, 5 * scale])
+      ctx.lineWidth = Math.max(1, 2 * scale)
+      ctx.strokeStyle = theme === 'light' ? 'rgba(100,116,139,0.9)' : '#9aa6bd'
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Handle
+      const handleH = 18 * scale
+      const handleY = y - 28 * scale
+      const handleW = Math.max(30 * scale, w * 0.6)
+      ctx.fillStyle = theme === 'light' ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.18)'
+      ctx.strokeStyle = theme === 'light' ? 'rgba(100,116,139,0.65)' : '#7e899d'
+      ctx.lineWidth = Math.max(1, 1.5 * scale)
+      roundRect(x, handleY, handleW, handleH, 6 * scale)
+      ctx.fill()
+      ctx.stroke()
+    }
+
+    const drawEdge = (edge: Edge) => {
+      const fromNode = state.nodes.find((n) => n.id === edge.fromId)
+      const toNode = state.nodes.find((n) => n.id === edge.toId)
+      if (!fromNode || !toNode) return
+
+      const start = getNodeAnchor(fromNode, toNode, true)
+      const end = getNodeAnchor(fromNode, toNode, false)
+      const startMini = worldToMini(start.x, start.y)
+      const endMini = worldToMini(end.x, end.y)
+
+      const startX = startMini.x
+      const startY = startMini.y
+      const endX = endMini.x
+      const endY = endMini.y
+
+      const curve = Math.min(30, Math.max(10, Math.hypot(endX - startX, endY - startY) * 0.25))
+      const cp1X = startX + (endX - startX) * 0.2
+      const cp2X = endX - (endX - startX) * 0.2
+      const cp1Y = startY + (endY > startY ? curve : -curve)
+      const cp2Y = endY - (endY > startY ? curve : -curve)
+
+      ctx.beginPath()
+      ctx.moveTo(startX, startY)
+      ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY)
+      ctx.strokeStyle = edge.type === 'true' ? '#43b581' : edge.type === 'false' ? '#f04747' : '#7289da'
+      ctx.lineWidth = Math.max(1, 2 * scale)
+      ctx.stroke()
+
+      ctx.fillStyle = ctx.strokeStyle as any
+      ctx.beginPath()
+      ctx.arc(endX, endY, Math.max(1.5, 4 * scale), 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Comment boxes (behind edges)
+    state.comments.forEach(drawComment)
+    // Edges
+    state.edges.forEach(drawEdge)
+    // Nodes (front)
+    state.nodes.forEach((n) => drawNode(n, connectingFromId === n.id))
+  }, [state.nodes, state.comments, state.edges, minimapMeta, theme, connectingFromId])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -410,12 +685,15 @@ export default function App() {
   }, [])
 
   const beginDrag = (e: React.MouseEvent, target: DragTarget) => {
+    // Only left button drags objects. Middle button reserved for viewport panning.
+    if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
     setState((prev) => ({ ...prev, dragTarget: target }))
   }
 
   const beginResize = (e: React.MouseEvent, commentId: string) => {
+    if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
     const current = stateRef.current
@@ -438,14 +716,57 @@ export default function App() {
     if (n) setDraft({ cn: n.cn, en: n.en, code: n.code, color: n.color })
   }
 
+  const editingNode = useMemo(() => {
+    if (editingId === null) return null
+    return state.nodes.find((x) => x.id === editingId) ?? null
+  }, [editingId, state.nodes])
+
   const closeModal = () => {
     setEditingId(null)
+  }
+
+  const openCommentModal = (id: string) => {
+    setEditingCommentId(id)
+    const c = state.comments.find((x) => x.id === id)
+    setCommentDraft(c?.text ?? '')
+    setCommentColorDraft(c?.color ?? '#5865f2')
+  }
+
+  const closeCommentModal = () => {
+    setEditingCommentId(null)
+  }
+
+  const saveCommentModal = () => {
+    if (!editingCommentId) return
+    setState((prev) => ({
+      ...prev,
+      comments: prev.comments.map((c) =>
+        c.id === editingCommentId ? { ...c, text: commentDraft, color: commentColorDraft } : c,
+      ),
+    }))
+    closeCommentModal()
+  }
+
+  const deleteComment = () => {
+    if (!editingCommentId) return
+    setState((prev) => ({
+      ...prev,
+      comments: prev.comments.filter((c) => c.id !== editingCommentId),
+    }))
+    closeCommentModal()
   }
 
   const saveModal = () => {
     if (editingId === null) return
     setState((prev) => {
-      const nextNodes = prev.nodes.map((n) => (n.id === editingId ? { ...n, cn: draft.cn, en: draft.en, code: draft.code, color: draft.color } : n))
+      const editingNode = prev.nodes.find((x) => x.id === editingId) ?? null
+      const nextNodes = prev.nodes.map((n) => {
+        if (n.id !== editingId) return n
+        if (editingNode?.type === 'condition') {
+          return { ...n, code: draft.code, color: draft.color }
+        }
+        return { ...n, cn: draft.cn, en: draft.en, code: draft.code, color: draft.color }
+      })
       return { ...prev, nodes: nextNodes }
     })
     closeModal()
@@ -517,7 +838,9 @@ export default function App() {
         setCurrentFileName(file.name || '新文件')
         return
       } catch (e) {
-        // fall back
+        // User cancelled picker: don't show fallback file input dialog again.
+        if (isFilePickerCancelled(e)) return
+        // Unexpected failure: fall back
         console.warn(e)
       }
     }
@@ -529,6 +852,10 @@ export default function App() {
     const gml = makeGml(state)
     setFileMenuOpen(false)
 
+    const fallbackSavedName = ensureGmlName(
+      currentFileName === '新文件' ? 'dialog_system.gml' : currentFileName,
+    )
+
     if (currentFileHandle) {
       try {
         const writable = await currentFileHandle.createWritable()
@@ -539,6 +866,8 @@ export default function App() {
       } catch (e) {
         console.error(e)
         alert('保存文件失败，已尝试使用“另存为”。')
+        setCurrentFileName(fallbackSavedName)
+        setIsDirty(false)
         onExport()
         return
       }
@@ -552,24 +881,31 @@ export default function App() {
       } catch (e) {
         console.error(e)
         alert('保存文件失败，已尝试使用“另存为”。')
+        setCurrentFileName(fallbackSavedName)
+        setIsDirty(false)
         onExport()
         return
       }
     }
 
+    // No handle/path available (e.g. "new file" or environment without persistent FS access).
+    // Keep existing download behavior, but update UI to reflect "saved".
+    setCurrentFileName(fallbackSavedName)
+    setIsDirty(false)
     onExport()
   }
 
   const handleSaveAs = async () => {
     setFileMenuOpen(false)
     const gml = makeGml(state)
+    const suggestedName = ensureGmlName(currentFileName === '新文件' ? 'dialog_system.gml' : currentFileName)
     const saver = (window as any).showSaveFilePicker as
       | undefined
       | ((opts?: any) => Promise<FileHandle>)
     if (saver) {
       try {
         const handle = await saver({
-          suggestedName: ensureGmlName(currentFileName === '新文件' ? 'dialog_system.gml' : currentFileName),
+          suggestedName,
           types: [
             {
               description: 'GML 文件',
@@ -587,9 +923,16 @@ export default function App() {
         setIsDirty(false)
         return
       } catch (e) {
+        if (isFilePickerCancelled(e)) return
         console.warn(e)
       }
     }
+    // Fallback to download.
+    // Also update current file name so the UI switches away from "新文件".
+    setCurrentFileHandle(null)
+    setCurrentFilePath(null)
+    setCurrentFileName(suggestedName)
+    setIsDirty(false)
     onExport()
   }
 
@@ -669,6 +1012,18 @@ export default function App() {
         >
           {theme === 'dark' ? '🌙' : '☀'}
         </button>
+        <button
+          className="theme-toggle"
+          onClick={() => {
+            setHighlightRulesText(
+              highlightRules.map((r) => `${r.pattern}=${r.color}`).join('\n'),
+            )
+            setSettingsOpen(true)
+          }}
+          title="设置"
+        >
+          ⚙
+        </button>
       </div>
 
       <div id="viewport" ref={viewportRef}>
@@ -680,10 +1035,26 @@ export default function App() {
               <div
                 key={c.id}
                 className="comment-box"
-                style={{ left: c.x, top: c.y, width: c.w, height: c.h }}
+                style={{
+                  left: c.x,
+                  top: c.y,
+                  width: c.w,
+                  height: c.h,
+                  borderColor: c.color,
+                  background: hexToRgba(c.color, theme === 'light' ? 0.08 : 0.06),
+                }}
               >
                 <div
                   className="comment-handle"
+                  style={{
+                    background: c.color,
+                    borderColor: c.color,
+                    color: '#fff',
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    openCommentModal(c.id)
+                  }}
                   onMouseDown={(e) => beginDrag(e, { kind: 'comment', id: c.id, ox: e.clientX, oy: e.clientY })}
                 >
                   {c.text}
@@ -778,7 +1149,7 @@ export default function App() {
         </div>
       </div>
 
-      <div id="minimap">
+      <div id="minimap" style={{ width: minimapSize.w, height: minimapSize.h }}>
         <canvas
           id="minimap-canvas"
           ref={minimapCanvasRef}
@@ -798,10 +1169,71 @@ export default function App() {
             }))
           }}
         />
+        <div
+          className="minimap-resize minimap-resize-left"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            minimapResizeRef.current = { edge: 'left', ox: e.clientX, oy: e.clientY, w: minimapSize.w, h: minimapSize.h }
+          }}
+        />
+        <div
+          className="minimap-resize minimap-resize-top"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            minimapResizeRef.current = { edge: 'top', ox: e.clientX, oy: e.clientY, w: minimapSize.w, h: minimapSize.h }
+          }}
+        />
         <div id="minimap-zoom">缩放: {zoomPercent}%</div>
         <div id="minimap-view" style={minimapViewStyle} />
       </div>
 
+      {editingCommentId !== null ? (
+        <div id="modal-overlay" style={{ display: 'flex' }}>
+          <div id="modal">
+            <h3 style={{ margin: 0 }}>注释配置</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: '#888' }}>注释文字</label>
+              <textarea
+                rows={4}
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+              />
+            </div>
+            <div className="color-row">
+              <label>注释颜色:</label>
+              <input
+                type="color"
+                value={commentColorDraft}
+                onChange={(e) => setCommentColorDraft(e.target.value)}
+              />
+              <div className="preset-color-list">
+                {PRESET_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    className={`preset-color ${commentColorDraft === color ? 'active' : ''}`}
+                    style={{ background: color }}
+                    onClick={() => setCommentColorDraft(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <button onClick={deleteComment} style={{ background: '#f04747' }}>
+                删除注释框
+              </button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={closeCommentModal} style={{ background: '#4f545c' }}>
+                  取消
+                </button>
+                <button onClick={saveCommentModal}>保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {editingId !== null ? (
         <div
           id="modal-overlay"
@@ -814,34 +1246,36 @@ export default function App() {
               节点配置
             </h3>
 
-            <div className="lang-box">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={{ fontSize: 12, color: '#888' }}>中文</label>
-                <textarea
-                  id="m-cn"
-                  rows={4}
-                  value={draft.cn}
-                  onChange={(e) => setDraft((d) => ({ ...d, cn: e.target.value }))}
-                />
+            {editingNode?.type !== 'condition' ? (
+              <div className="lang-box">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <label style={{ fontSize: 12, color: '#888' }}>中文</label>
+                  <textarea
+                    id="m-cn"
+                    rows={4}
+                    value={draft.cn}
+                    onChange={(e) => setDraft((d) => ({ ...d, cn: e.target.value }))}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <label style={{ fontSize: 12, color: '#888' }}>英文</label>
+                  <textarea
+                    id="m-en"
+                    rows={4}
+                    value={draft.en}
+                    onChange={(e) => setDraft((d) => ({ ...d, en: e.target.value }))}
+                  />
+                </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={{ fontSize: 12, color: '#888' }}>英文</label>
-                <textarea
-                  id="m-en"
-                  rows={4}
-                  value={draft.en}
-                  onChange={(e) => setDraft((d) => ({ ...d, en: e.target.value }))}
-                />
-              </div>
-            </div>
+            ) : null}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <label style={{ fontSize: 12, color: '#888' }}>执行代码</label>
-              <textarea
-                id="m-code"
-                rows={5}
+              <CodeEditor
                 value={draft.code}
-                onChange={(e) => setDraft((d) => ({ ...d, code: e.target.value }))}
+                onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
+                rules={highlightRules}
+                height={180}
               />
             </div>
 
@@ -875,6 +1309,49 @@ export default function App() {
                 取消
               </button>
               <button onClick={saveModal}>保存配置</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {settingsOpen ? (
+        <div id="modal-overlay" style={{ display: 'flex' }}>
+          <div id="modal">
+            <h3 style={{ margin: 0 }}>编辑器设置</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ fontSize: 12, color: '#888' }}>
+                高亮规则（每行一条：pattern=#RRGGBB）
+              </label>
+              <textarea
+                rows={10}
+                value={highlightRulesText}
+                onChange={(e) => setHighlightRulesText(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                style={{ background: '#4f545c' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  const next: HighlightRule[] = highlightRulesText
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line) => {
+                      const [pattern, color] = line.split('=')
+                      return { pattern: (pattern ?? '').trim(), color: (color ?? '').trim() }
+                    })
+                    .filter((r) => r.pattern && r.color)
+                  setHighlightRules(next)
+                  setSettingsOpen(false)
+                }}
+              >
+                保存
+              </button>
             </div>
           </div>
         </div>

@@ -63,6 +63,7 @@ export function addObject(
       w: 400,
       h: 300,
       text: '区域注释',
+      color: '#5865f2',
     }
     return { ...state, comments: [...state.comments, next], idCounter: state.idCounter + 1 }
   }
@@ -157,7 +158,17 @@ export function parseGmlEditorData(text: string): EditorState | null {
       ...base,
       nodes: Array.isArray(parsed.nodes) ? parsed.nodes : base.nodes,
       edges: Array.isArray(parsed.edges) ? parsed.edges : base.edges,
-      comments: Array.isArray(parsed.comments) ? parsed.comments : base.comments,
+      comments: Array.isArray(parsed.comments)
+        ? parsed.comments.map((c: any) => ({
+            id: String(c.id ?? ''),
+            x: typeof c.x === 'number' ? c.x : 0,
+            y: typeof c.y === 'number' ? c.y : 0,
+            w: typeof c.w === 'number' ? c.w : 400,
+            h: typeof c.h === 'number' ? c.h : 300,
+            text: typeof c.text === 'string' ? c.text : '区域注释',
+            color: typeof c.color === 'string' ? c.color : '#5865f2',
+          }))
+        : base.comments,
       idCounter: typeof parsed.idCounter === 'number' ? parsed.idCounter : base.idCounter,
       view: parsed.view && typeof parsed.view.x === 'number' && typeof parsed.view.y === 'number'
         ? parsed.view
