@@ -256,6 +256,7 @@ canvas {
     border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
     z-index: 2000;
     box-shadow: var(--shadow-strong);
+    overflow: hidden;
 }
 
 #minimap-canvas {

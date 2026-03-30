@@ -3,8 +3,17 @@ import type { CommentBox, DragTarget, Edge, EdgeType, EditorState, Node, Resizin
 import { createInitialState } from './editorTypes'
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from './editorLogic'
 import fs from 'node:fs'
-import CodeEditor, { type HighlightRule } from './CodeEditor'
+import CodeEditor, { type CodeStyleProfile } from './CodeEditor'
 
+/**
+ * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
+ * 缩略图（工作区快照）、文件打开/保存/另存为、主题切换与设置面板等。
+ *
+ * 设计原则：
+ * - 尽量保持编辑器“状态”集中在 state（nodes/edges/comments/view 等）
+ * - Canvas 负责连线与缩略图快照，DOM 负责交互与文本/表单
+ * - Electron 环境下尽可能覆盖写回已打开文件；无句柄/路径时回退为下载导出
+ */
 type ModalDraft = {
   cn: string
   en: string
@@ -122,19 +131,61 @@ export default function App() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [commentDraft, setCommentDraft] = useState<string>('')
   const [commentColorDraft, setCommentColorDraft] = useState<string>('#5865f2')
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [highlightRules, setHighlightRules] = useState<HighlightRule[]>(() => {
+  const [codeProfiles, setCodeProfiles] = useState(() => {
+    const defaults = {
+      dark: {
+        active: 0,
+        profiles: [
+          {
+            name: '深色方案 A',
+            fontFamily: 'Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
+            fontSize: 12,
+            functionColor: '#a855f7',
+            rules: [{ pattern: 'if', color: '#60a5fa' }, { pattern: 'return', color: '#34d399' }],
+          },
+          {
+            name: '深色方案 B',
+            fontFamily: 'Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
+            fontSize: 13,
+            functionColor: '#f472b6',
+            rules: [{ pattern: 'var', color: '#fbbf24' }, { pattern: 'global', color: '#93c5fd' }],
+          },
+        ] as CodeStyleProfile[],
+      },
+      light: {
+        active: 0,
+        profiles: [
+          {
+            name: '浅色方案 A',
+            fontFamily: 'Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
+            fontSize: 12,
+            functionColor: '#7c3aed',
+            rules: [{ pattern: 'if', color: '#2563eb' }, { pattern: 'return', color: '#059669' }],
+          },
+          {
+            name: '浅色方案 B',
+            fontFamily: 'Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
+            fontSize: 13,
+            functionColor: '#be185d',
+            rules: [{ pattern: 'var', color: '#b45309' }, { pattern: 'global', color: '#1d4ed8' }],
+          },
+        ] as CodeStyleProfile[],
+      },
+    }
     try {
-      const raw = localStorage.getItem('dialogueEditor.highlightRules')
-      if (!raw) return [{ pattern: 'if', color: '#3b82f6' }, { pattern: 'function', color: '#a855f7' }]
+      const raw = localStorage.getItem('dialogueEditor.codeProfiles')
+      if (!raw) return defaults
       const parsed = JSON.parse(raw)
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter(Boolean)
+      return parsed ?? defaults
     } catch {
-      return [{ pattern: 'if', color: '#3b82f6' }, { pattern: 'function', color: '#a855f7' }]
+      return defaults
     }
   })
-  const [highlightRulesText, setHighlightRulesText] = useState<string>('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsJsonText, setSettingsJsonText] = useState<string>('')
+  const activeProfile: CodeStyleProfile =
+    codeProfiles[theme]?.profiles?.[codeProfiles[theme]?.active ?? 0] ??
+    codeProfiles[theme]?.profiles?.[0]
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const lineCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -157,11 +208,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('dialogueEditor.highlightRules', JSON.stringify(highlightRules))
+      localStorage.setItem('dialogueEditor.codeProfiles', JSON.stringify(codeProfiles))
     } catch {
       // ignore
     }
-  }, [highlightRules])
+  }, [codeProfiles])
 
   useEffect(() => {
     const root = document.documentElement
@@ -318,16 +369,10 @@ export default function App() {
     const worldW = windowSize.w / state.view.zoom
     const worldH = windowSize.h / state.view.zoom
 
-    let viewLeft = worldLeft * scale + offsetX
-    let viewTop = worldTop * scale + offsetY
-    let viewW = worldW * scale
-    let viewH = worldH * scale
-
-    // Clamp viewport indicator inside minimap.
-    viewW = Math.min(W, Math.max(0, viewW))
-    viewH = Math.min(H, Math.max(0, viewH))
-    viewLeft = Math.min(W - viewW, Math.max(0, viewLeft))
-    viewTop = Math.min(H - viewH, Math.max(0, viewTop))
+    const viewLeft = worldLeft * scale + offsetX
+    const viewTop = worldTop * scale + offsetY
+    const viewW = worldW * scale
+    const viewH = worldH * scale
 
     return {
       W,
@@ -1015,9 +1060,7 @@ export default function App() {
         <button
           className="theme-toggle"
           onClick={() => {
-            setHighlightRulesText(
-              highlightRules.map((r) => `${r.pattern}=${r.color}`).join('\n'),
-            )
+            setSettingsJsonText(JSON.stringify(codeProfiles, null, 2))
             setSettingsOpen(true)
           }}
           title="设置"
@@ -1274,7 +1317,8 @@ export default function App() {
               <CodeEditor
                 value={draft.code}
                 onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
-                rules={highlightRules}
+                profile={activeProfile}
+                theme={theme}
                 height={180}
               />
             </div>
@@ -1320,12 +1364,12 @@ export default function App() {
             <h3 style={{ margin: 0 }}>编辑器设置</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ fontSize: 12, color: '#888' }}>
-                高亮规则（每行一条：pattern=#RRGGBB）
+                代码样式（深/浅色各两套方案，含字体/字号/函数名颜色/关键字颜色；可导入导出）
               </label>
               <textarea
-                rows={10}
-                value={highlightRulesText}
-                onChange={(e) => setHighlightRulesText(e.target.value)}
+                rows={12}
+                value={settingsJsonText}
+                onChange={(e) => setSettingsJsonText(e.target.value)}
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1337,16 +1381,13 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  const next: HighlightRule[] = highlightRulesText
-                    .split('\n')
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line) => {
-                      const [pattern, color] = line.split('=')
-                      return { pattern: (pattern ?? '').trim(), color: (color ?? '').trim() }
-                    })
-                    .filter((r) => r.pattern && r.color)
-                  setHighlightRules(next)
+                  try {
+                    const parsed = JSON.parse(settingsJsonText)
+                    setCodeProfiles(parsed)
+                  } catch {
+                    alert('设置 JSON 格式错误，请检查后再保存。')
+                    return
+                  }
                   setSettingsOpen(false)
                 }}
               >

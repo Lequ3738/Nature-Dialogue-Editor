@@ -3,12 +3,35 @@ import CodeMirror from '@uiw/react-codemirror'
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { RangeSetBuilder } from '@codemirror/state'
 import { javascript } from '@codemirror/lang-javascript'
+import { syntaxTree } from '@codemirror/language'
 
 export type HighlightRule = {
   pattern: string
   color: string
 }
 
+export type CodeStyleProfile = {
+  name: string
+  fontFamily: string
+  fontSize: number
+  rules: HighlightRule[]
+  functionColor: string
+}
+
+/**
+ * 轻量代码编辑器封装（CodeMirror 6）：
+ * - 行号
+ * - 基础 JS 语法支持（@codemirror/lang-javascript）
+ * - 用户自定义关键字高亮（pattern -> color）
+ * - 函数名自动识别高亮（基于语法树）
+ *
+ * 注意：这里的“用户关键字高亮”不是完整语法高亮，只是便于用户快速标记自定义词汇。
+ * 真正语法高亮仍由 CodeMirror 的语言包提供（我们只叠加装饰）。
+ */
+/**
+ * 这里用“词边界 + 用户定义关键字列表”的方式做轻量高亮。
+ * 优点：实现简单、可由用户直接配置；缺点：不是完整语法高亮。
+ */
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -25,16 +48,18 @@ function buildRuleRegex(rules: HighlightRule[]) {
 export default function CodeEditor(props: {
   value: string
   onChange: (next: string) => void
-  rules: HighlightRule[]
+  profile: CodeStyleProfile
+  theme: 'dark' | 'light'
   height?: number
 }) {
-  const { value, onChange, rules, height = 160 } = props
+  const { value, onChange, profile, theme, height = 160 } = props
 
   const [extensionsKey, setExtensionsKey] = useState(0)
   useEffect(() => {
     setExtensionsKey((k) => k + 1)
-  }, [rules])
+  }, [profile, theme])
 
+  const rules = profile.rules
   const regex = useMemo(() => buildRuleRegex(rules), [rules])
   const colorMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -59,24 +84,76 @@ export default function CodeEditor(props: {
           }
         }
         compute(view: EditorView): DecorationSet {
-          if (!regex || !colorMap.size) return Decoration.none
+          if ((!regex || !colorMap.size) && !profile.functionColor) return Decoration.none
           const builder = new RangeSetBuilder<Decoration>()
           const text = view.state.doc.toString()
-          let m: RegExpExecArray | null
-          const local = new RegExp(regex.source, 'g')
-          while ((m = local.exec(text))) {
-            const match = m[0]
-            const from = m.index
-            const to = from + match.length
-            const color = colorMap.get(match) ?? '#3b82f6'
-            builder.add(
-              from,
-              to,
-              Decoration.mark({
-                attributes: { style: `color: ${color}; font-weight: 600;` },
-              }),
-            )
+
+          // 1) 用户关键字高亮
+          if (regex && colorMap.size) {
+            let m: RegExpExecArray | null
+            const local = new RegExp(regex.source, 'g')
+            while ((m = local.exec(text))) {
+              const match = m[0]
+              const from = m.index
+              const to = from + match.length
+              const color = colorMap.get(match) ?? '#3b82f6'
+              builder.add(
+                from,
+                to,
+                Decoration.mark({
+                  attributes: { style: `color: ${color}; font-weight: 650;` },
+                }),
+              )
+            }
           }
+
+          // 2) 函数名自动识别（基于语法树）：对函数声明/函数表达式/箭头函数的 name/变量名着色
+          const funcColor = profile.functionColor?.trim()
+          if (funcColor) {
+            const tree = syntaxTree(view.state)
+            tree.iterate({
+              enter(node) {
+                const t = node.type.name
+                // FunctionDeclaration: name 通常是 Identifier
+                if (t === 'FunctionDeclaration') {
+                  // 向下找第一个 Identifier
+                  const cur = node.node
+                  let found = false
+                  cur.firstChild && cur.firstChild
+                  cur.cursor().iterate((c) => {
+                    if (found) return false
+                    if (c.type.name === 'Identifier') {
+                      builder.add(
+                        c.from,
+                        c.to,
+                        Decoration.mark({
+                          attributes: { style: `color: ${funcColor}; font-weight: 650;` },
+                        }),
+                      )
+                      found = true
+                      return false
+                    }
+                    return undefined
+                  })
+                }
+                // VariableDefinition + ArrowFunction / FunctionExpression 的组合：标记变量名
+                if (t === 'VariableDefinition') {
+                  const cur = node.node
+                  const first = cur.firstChild
+                  if (first && first.type.name === 'Identifier') {
+                    builder.add(
+                      first.from,
+                      first.to,
+                      Decoration.mark({
+                        attributes: { style: `color: ${funcColor}; font-weight: 650;` },
+                      }),
+                    )
+                  }
+                }
+              },
+            })
+          }
+
           return builder.finish()
         }
       },
@@ -84,21 +161,26 @@ export default function CodeEditor(props: {
         decorations: (v) => v.decorations,
       },
     )
-  }, [colorMap, regex])
+  }, [colorMap, profile.functionColor, regex])
 
   const themeExt = useMemo(
     () =>
       EditorView.theme({
         '&': {
-          fontFamily: 'Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
-          fontSize: '12px',
+          fontFamily: profile.fontFamily,
+          fontSize: `${profile.fontSize}px`,
+          backgroundColor: theme === 'light' ? '#ffffff' : '#111827',
+          color: theme === 'light' ? '#0f172a' : '#e5e7eb',
         },
         '.cm-gutters': {
-          backgroundColor: 'transparent',
+          backgroundColor: theme === 'light' ? '#f8fafc' : 'rgba(255,255,255,0.04)',
           borderRight: '1px solid rgba(127, 127, 127, 0.25)',
         },
+        '.cm-content': {
+          caretColor: theme === 'light' ? '#0f172a' : '#e5e7eb',
+        },
       }),
-    [],
+    [profile.fontFamily, profile.fontSize, theme],
   )
 
   const extensions = useMemo(
@@ -111,7 +193,13 @@ export default function CodeEditor(props: {
   )
 
   return (
-    <div style={{ border: '1px solid rgba(127, 127, 127, 0.35)', borderRadius: 8, overflow: 'hidden' }}>
+    <div
+      style={{
+        border: theme === 'light' ? '1px solid rgba(15,23,42,0.15)' : '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+    >
       <CodeMirror
         key={extensionsKey}
         value={value}
