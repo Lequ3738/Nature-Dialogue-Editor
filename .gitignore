@@ -2,6 +2,7 @@ node_modules/
 
 dist/
 dist-electron/
+dist_electron/
 out/
 build/
 *.exe
