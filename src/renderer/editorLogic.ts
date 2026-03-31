@@ -153,7 +153,7 @@ export function makeGml(state: EditorState): string {
     if (state.nodes.length > 0) gml += `ds_list_add(_l, _n[0]);\n\n`;
     else gml += `ds_list_add(_l, -1);\n\n`;
 
-    gml += `return _g;\n\n`;
+    gml += `return _l;\n\n`;
 
     // 写入元数据 (工程文件恢复)
     const meta = btoa(encodeURIComponent(JSON.stringify(state)));
