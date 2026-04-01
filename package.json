@@ -1,7 +1,6 @@
 {
     "name": "dialogue-editor",
     "version": "1.0.0",
-    "description": "Dialogue Editor",
     "main": "dist-electron/index.js",
     "scripts": {
         "dev": "vite",
@@ -9,8 +8,9 @@
         "build": "vite build && electron-builder"
     },
     "keywords": [],
-    "author": "Lequ",
+    "author": "",
     "license": "ISC",
+    "description": "",
     "devDependencies": {
         "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/language": "^6.12.3",
@@ -36,10 +36,8 @@
             "output": "dist_electron"
         },
         "files": [
-            "dist/**",
-            "dist-electron/**",
-            "node_modules",
-            "package.json"
+            "dist",
+            "dist-electron"
         ],
         "win": {
             "target": "portable",

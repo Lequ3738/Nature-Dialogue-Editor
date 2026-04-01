@@ -122,34 +122,13 @@ export function makeGml(state: EditorState): string {
     let gml = `// GM8 对话系统导出 (有向图结构)\n// 使用编辑器重新加载此文件可编辑布局\n\nvar _g, _n, _l;\n_g = ds_graph_create();\n\n`;
 
     state.nodes.forEach((n) => {
-        // 找到指向当前节点的父节点
-        const parentEdges = state.edges.filter((e) => e.toId === n.id);
-        const parentNodes = parentEdges.map((e) => state.nodes.find((node) => node.id === e.fromId));
-
-        // 检查是否有父节点的出度 >= 2
-        const hasParentWithOutDegree2 = parentNodes.some((parent) => {
-            if (!parent) return false; // 如果父节点不存在，跳过
-            const parentOutDegree = state.edges.filter((e) => e.fromId === parent.id).length;
-            return parentOutDegree >= 2;
-        });
-
-        if (n.type === "node" && hasParentWithOutDegree2) {
-            gml += `// Node #${n.id}\n_n[${n.id}] = ds_graph_node_add(_g, '\n`;
-            gml += `    var _text; \n`;
-            gml += `    _text[lang_cn] = "${n.cn.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            gml += `    _text[lang_en] = "${n.en.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
-            gml += `    return _text[global.language];\n`;
-            gml += `');\n\n`;
-        } else {
-            gml += `// Node #${n.id}\n_n[${n.id}] = ds_graph_node_add(_g, '\n`;
-            gml += `    var _text; \n`;
-            gml += `    _text[lang_cn] = "${n.cn.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            gml += `    _text[lang_en] = "${n.en.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            gml += `    displayingText = _text[global.language];\n`;
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
-            gml += `');\n\n`;
-        }
+        gml += `// Node #${n.id}\n_n[${n.id}] = ds_graph_node_add(_g, '\n`;
+        gml += `    var _text; \n`;
+        gml += `    _text[lang_cn] = "${n.cn.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
+        gml += `    _text[lang_en] = "${n.en.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
+        gml += `    displayingText = _text[global.language];\n`;
+        if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+        gml += `');\n\n`;
     });
 
     gml += `// 逻辑分支定义\n`;
