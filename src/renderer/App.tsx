@@ -60,6 +60,16 @@ function isFilePickerCancelled(err: unknown): boolean {
     return false;
 }
 
+/** Electron 在 File 上挂接的本机绝对路径；浏览器中不存在。 */
+function filePathFromElectron(f: File): string | null {
+    const p = (f as any).path || (f as any).webkitRelativePath;
+    return typeof p === "string" && p.length > 0 ? p : null;
+}
+
+function isElectronRenderer(): boolean {
+    return getIpcRenderer() !== null;
+}
+
 function hexToRgba(hex: string, alpha: number): string {
     const h = (hex || "").trim().replace("#", "");
     if (h.length === 3) {
@@ -114,6 +124,12 @@ function getNodeAnchor(
         return dx >= 0 ? { x: to.x, y: centerTo.y } : { x: to.x + NODE_WIDTH, y: centerTo.y };
     }
     return dy >= 0 ? { x: centerTo.x, y: to.y } : { x: centerTo.x, y: to.y + NODE_HEIGHT };
+}
+
+async function writeHandleText(handle: FileHandle, text: string) {
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
 }
 
 export default function App() {
@@ -975,13 +991,13 @@ export default function App() {
         closeModal();
     };
 
-    const onExport = () => {
+    const onExport = (downloadName?: string) => {
         const gml = makeGml(state);
         const blob = new Blob([gml], { type: "text/plain" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = ensureGmlName(
-            currentFileName === "新文件" ? "dialog_system.gml" : currentFileName
+            downloadName ?? (currentFileName === "新文件" ? "dialog_system.gml" : currentFileName)
         );
         a.click();
     };
@@ -995,15 +1011,13 @@ export default function App() {
                 alert("此文件不含编辑器元数据！");
                 return;
             }
+
             suppressDirtyRef.current = true;
             setState(parsed);
-            setEditingId(null);
-            setIsDirty(false);
-            const anyFile = file as any;
-            const path = typeof anyFile.path === "string" ? anyFile.path : null;
             setCurrentFileName(file.name || "新文件");
-            setCurrentFilePath(path);
+            setCurrentFilePath(filePathFromElectron(file));
             setCurrentFileHandle(null);
+            setIsDirty(false);
         };
         reader.readAsText(file);
     };
@@ -1011,7 +1025,6 @@ export default function App() {
     const handleOpenClick = async () => {
         setFileMenuOpen(false);
 
-        // Prefer File System Access API (no save dialog on overwrite).
         const picker = (window as any).showOpenFilePicker as
             | undefined
             | (() => Promise<FileHandle[]>);
@@ -1019,6 +1032,7 @@ export default function App() {
             try {
                 const [handle] = await picker();
                 if (!handle) return;
+
                 const file = await handle.getFile();
                 const text = await file.text();
                 const parsed = parseGmlEditorData(text);
@@ -1026,6 +1040,7 @@ export default function App() {
                     alert("此文件不含编辑器元数据！");
                     return;
                 }
+
                 suppressDirtyRef.current = true;
                 setState(parsed);
                 setEditingId(null);
@@ -1035,9 +1050,7 @@ export default function App() {
                 setCurrentFileName(file.name || "新文件");
                 return;
             } catch (e) {
-                // User cancelled picker: don't show fallback file input dialog again.
                 if (isFilePickerCancelled(e)) return;
-                // Unexpected failure: fall back
                 console.warn(e);
             }
         }
@@ -1049,58 +1062,49 @@ export default function App() {
         const gml = makeGml(state);
         setFileMenuOpen(false);
 
-        const fallbackSavedName = ensureGmlName(
-            currentFileName === "新文件" ? "dialog_system.gml" : currentFileName
-        );
-
+        // 1) 只要有 FileSystemFileHandle，就直接写回
         if (currentFileHandle) {
             try {
-                const writable = await currentFileHandle.createWritable();
-                await writable.write(gml);
-                await writable.close();
+                await writeHandleText(currentFileHandle, gml);
                 setIsDirty(false);
+                console.log("已通过 handle 静默保存");
                 return;
             } catch (e) {
-                console.error(e);
-                alert("保存文件失败，已尝试使用“另存为”。");
-                setCurrentFileName(fallbackSavedName);
-                setIsDirty(false);
-                onExport();
-                return;
+                console.warn("handle 保存失败，准备降级到路径保存/另存为", e);
             }
         }
 
-        if (currentFilePath) {
+        // 2) Electron 下，如果你真的有物理路径，再用 fs 覆盖
+        if (currentFilePath && isElectronRenderer()) {
             try {
                 fs.writeFileSync(currentFilePath, gml, "utf8");
                 setIsDirty(false);
+                console.log("已通过 fs 静默保存:", currentFilePath);
                 return;
             } catch (e) {
-                console.error(e);
-                alert("保存文件失败，已尝试使用“另存为”。");
-                setCurrentFileName(fallbackSavedName);
-                setIsDirty(false);
-                onExport();
+                console.warn("fs 保存失败，转另存为", e);
+                await handleSaveAs();
                 return;
             }
         }
 
-        // No handle/path available (e.g. "new file" or environment without persistent FS access).
-        // Keep existing download behavior, but update UI to reflect "saved".
-        setCurrentFileName(fallbackSavedName);
-        setIsDirty(false);
-        onExport();
+        // 3) 都没有，就另存为
+        console.log("无可写目标，触发另存为");
+        await handleSaveAs();
     };
 
     const handleSaveAs = async () => {
         setFileMenuOpen(false);
+
         const gml = makeGml(state);
         const suggestedName = ensureGmlName(
             currentFileName === "新文件" ? "dialog_system.gml" : currentFileName
         );
+
         const saver = (window as any).showSaveFilePicker as
             | undefined
             | ((opts?: any) => Promise<FileHandle>);
+
         if (saver) {
             try {
                 const handle = await saver({
@@ -1112,13 +1116,12 @@ export default function App() {
                         },
                     ],
                 });
-                const writable = await handle.createWritable();
-                await writable.write(gml);
-                await writable.close();
-                const file = await handle.getFile();
+
+                await writeHandleText(handle, gml);
+
                 setCurrentFileHandle(handle);
                 setCurrentFilePath(null);
-                setCurrentFileName(file.name || "新文件");
+                setCurrentFileName(suggestedName);
                 setIsDirty(false);
                 return;
             } catch (e) {
@@ -1126,13 +1129,13 @@ export default function App() {
                 console.warn(e);
             }
         }
-        // Fallback to download.
-        // Also update current file name so the UI switches away from "新文件".
+
+        // 浏览器回退：只能下载，不能原地覆盖
         setCurrentFileHandle(null);
         setCurrentFilePath(null);
         setCurrentFileName(suggestedName);
         setIsDirty(false);
-        onExport();
+        onExport(suggestedName);
     };
 
     const viewportTransformStyle = useMemo(
