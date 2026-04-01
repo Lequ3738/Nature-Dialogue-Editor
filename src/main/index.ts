@@ -33,6 +33,34 @@ function createWindow() {
         }
     });
 
+    // 处理另存为对话框
+    ipcMain.handle("dialog:save", async (_event, defaultName: string) => {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName,
+            filters: [{ name: "GML Files", extensions: ["gml"] }]
+        });
+        return canceled ? null : filePath;
+    });
+
+    // 处理打开文件对话框
+    ipcMain.handle("dialog:open", async () => {
+        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            properties: ["openFile"],
+            filters: [{ name: "GML Files", extensions: ["gml"] }]
+        });
+        return canceled ? null : filePaths[0];
+    });
+
+    // 读取文件内容
+    ipcMain.handle("editor:read-file", async (_event, filePath: string) => {
+        try {
+            return fs.readFileSync(filePath, "utf8");
+        } catch (error) {
+            console.error("Read file error:", error);
+            return null;
+        }
+    });
+
     mainWindow.on("close", (e) => {
         if (!isDirty) return;
         const res = dialog.showMessageBoxSync(mainWindow, {

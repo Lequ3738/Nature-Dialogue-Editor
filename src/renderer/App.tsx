@@ -11,6 +11,7 @@ import type {
 import { createInitialState } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import fs from "node:fs";
+import path from "node:path";
 import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
 
 /**
@@ -19,7 +20,7 @@ import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
  *
  * 设计原则：
  * - 尽量保持编辑器“状态”集中在 state（nodes/edges/comments/view 等）
- * - Canvas 负责连线与缩略图快照，DOM 负责交互与文本/表单
+ * - Canvas 负责连线与缩略图，DOM 负责交互与文本/表单
  * - Electron 环境下尽可能覆盖写回已打开文件；无句柄/路径时回退为下载导出
  */
 type ModalDraft = {
@@ -1010,143 +1011,101 @@ export default function App() {
 
     const handleOpenClick = async () => {
         setFileMenuOpen(false);
+        
+        // 如果当前已修改，先提示保存
+        if (isDirty) {
+            const res = confirm("当前文件尚未保存，是否先保存更改？");
+            if (res) {
+                const saved = await handleSave();
+                if (!saved) return; // 用户取消了保存或保存失败，停止打开流程
+            }
+        }
 
-        // Prefer File System Access API (no save dialog on overwrite).
-        const picker = (window as any).showOpenFilePicker as
-            | undefined
-            | (() => Promise<FileHandle[]>);
-        if (picker) {
-            try {
-                const [handle] = await picker();
-                if (!handle) return;
-                const file = await handle.getFile();
-                const text = await file.text();
-                const parsed = parseGmlEditorData(text);
-                if (!parsed) {
-                    alert("此文件不含编辑器元数据！");
-                    return;
-                }
+        const ipc = getIpcRenderer();
+        if (!ipc) return;
+
+        const filePath = await ipc.invoke("dialog:open");
+        if (!filePath) return;
+
+        const content = await ipc.invoke("editor:read-file", filePath);
+        if (content) {
+            const parsed = parseGmlEditorData(content);
+            if (parsed) {
                 suppressDirtyRef.current = true;
                 setState(parsed);
-                setEditingId(null);
+                setCurrentFilePath(filePath);
+                setCurrentFileName(path.basename(filePath));
                 setIsDirty(false);
-                setCurrentFileHandle(handle);
-                setCurrentFilePath(null);
-                setCurrentFileName(file.name || "新文件");
-                return;
-            } catch (e) {
-                // User cancelled picker: don't show fallback file input dialog again.
-                if (isFilePickerCancelled(e)) return;
-                // Unexpected failure: fall back
-                console.warn(e);
+            } else {
+                alert("无法解析该文件。");
             }
         }
-
-        if (fileInputRef.current) fileInputRef.current.click();
     };
 
-    const handleSave = async () => {
-        const gml = makeGml(state);
-        setFileMenuOpen(false);
+    const handleSave = async (): Promise<boolean> => {
+        const ipc = getIpcRenderer();
+        if (!ipc) return false;
 
-        const fallbackSavedName = ensureGmlName(
-            currentFileName === "新文件" ? "dialog_system.gml" : currentFileName
-        );
+        const content = makeGml(state);
 
-        if (currentFileHandle) {
-            try {
-                const writable = await currentFileHandle.createWritable();
-                await writable.write(gml);
-                await writable.close();
-                setIsDirty(false);
-                return;
-            } catch (e) {
-                console.error("File save failed:", e);
-                alert("保存文件失败，已尝试使用“另存为”。（错误代码：A001）");
-                setCurrentFileName(fallbackSavedName);
-                setIsDirty(false);
-                onExport();
-                return;
-            }
-        }
-
+        // 如果已有文件路径，尝试静默保存
         if (currentFilePath) {
-            try {
-                const ipc = getIpcRenderer();
-                if (ipc) {
-                    // Use IPC to invoke main process file save
-                    const result = await ipc.invoke("editor:save-file", currentFilePath, gml);
-                    if (result?.success) {
-                        setIsDirty(false);
-                        return;
-                    } else {
-                        throw new Error(result?.error || "Unknown error");
-                    }
-                } else {
-                    // Fallback: try direct fs write (may fail in sandboxed environments)
-                    fs.writeFileSync(currentFilePath, gml, "utf8");
-                    setIsDirty(false);
-                    return;
-                }
-            } catch (e) {
-                console.error(e);
-                alert("保存文件失败，已尝试使用“另存为”。（错误代码：A002）");
-                setCurrentFileName(fallbackSavedName);
+            const result = await ipc.invoke("editor:save-file", currentFilePath, content);
+            if (result.success) {
                 setIsDirty(false);
-                onExport();
-                return;
+                return true;
+            } else {
+                // 静默保存失败（如 A001 情况），回退到另存为
+                console.warn("Silent save failed, falling back to Save As.");
+                return await handleSaveAs();
             }
+        } else {
+            return await handleSaveAs();
         }
-
-        // No handle/path available (e.g. "new file" or environment without persistent FS access).
-        // Keep existing download behavior, but update UI to reflect "saved".
-        setCurrentFileName(fallbackSavedName);
-        setIsDirty(false);
-        onExport();
     };
 
-    const handleSaveAs = async () => {
-        setFileMenuOpen(false);
-        const gml = makeGml(state);
-        const suggestedName = ensureGmlName(
-            currentFileName === "新文件" ? "dialog_system.gml" : currentFileName
-        );
-        const saver = (window as any).showSaveFilePicker as
-            | undefined
-            | ((opts?: any) => Promise<FileHandle>);
-        if (saver) {
-            try {
-                const handle = await saver({
-                    suggestedName,
-                    types: [
-                        {
-                            description: "GML 文件",
-                            accept: { "text/plain": [".gml"] },
-                        },
-                    ],
-                });
-                const writable = await handle.createWritable();
-                await writable.write(gml);
-                await writable.close();
-                const file = await handle.getFile();
-                setCurrentFileHandle(handle);
-                setCurrentFilePath(null);
-                setCurrentFileName(file.name || "新文件");
-                setIsDirty(false);
-                return;
-            } catch (e) {
-                if (isFilePickerCancelled(e)) return;
-                console.warn(e);
-            }
+    const handleSaveAs = async (): Promise<boolean> => {
+        const ipc = getIpcRenderer();
+        if (!ipc) return false;
+
+        const defaultName = ensureGmlName(currentFileName);
+        const filePath = await ipc.invoke("dialog:save", defaultName);
+        
+        if (!filePath) return false;
+
+        const result = await ipc.invoke("editor:save-file", filePath, makeGml(state));
+        if (result.success) {
+            setCurrentFilePath(filePath);
+            setCurrentFileName(path.basename(filePath)); // 更新标题为选择的文件名
+            setIsDirty(false);
+            return true;
+        } else {
+            alert("保存失败（错误代码：A002）");
+            return false;
         }
-        // Fallback to download.
-        // Also update current file name so the UI switches away from "新文件".
-        setCurrentFileHandle(null);
-        setCurrentFilePath(null);
-        setCurrentFileName(suggestedName);
-        setIsDirty(false);
-        onExport();
     };
+
+    // 修复设置按钮和切换深/浅色模式按钮导致文件修改
+    function handleThemeChange(newTheme: "dark" | "light") {
+        suppressDirtyRef.current = true;
+        setTheme(newTheme);
+        suppressDirtyRef.current = false;
+    }
+
+    function handleSettingsChange(newSettings: string) {
+        suppressDirtyRef.current = true;
+        setSettingsJsonText(newSettings);
+        suppressDirtyRef.current = false;
+    }
+
+    // 修复另存为按钮状态问题
+    useEffect(() => {
+        const saveAsButton = document.getElementById("saveAsButton") as HTMLButtonElement | null;
+        if (saveAsButton) {
+            saveAsButton.disabled = !isDirty && !currentFilePath;
+        }
+        return undefined; // 确保返回 void 类型
+    }, [isDirty, currentFilePath]);
 
     const viewportTransformStyle = useMemo(
         () =>
@@ -1164,7 +1123,7 @@ export default function App() {
                         setState((prev) => addObject(prev, "node", windowSize.w, windowSize.h));
                     }}
                 >
-                    + 对话节点
+                    + 对话
                 </button>
                 <button
                     onClick={() => {
@@ -1172,17 +1131,23 @@ export default function App() {
                             addObject(prev, "condition", windowSize.w, windowSize.h)
                         );
                     }}
-                    style={{ background: "#e67e22" }}
+                    style={ theme === "dark" ? 
+                        { background: "#bf6b21" } : 
+                        { background: "#e67e22" }
+                    }
                 >
-                    + 条件判定
+                    + 条件
                 </button>
                 <button
                     onClick={() => {
                         setState((prev) => addObject(prev, "comment", windowSize.w, windowSize.h));
                     }}
-                    style={{ background: "#5865f2" }}
+                    style={ theme === "dark" ? 
+                        { background: "#288856" } : 
+                        { background: "#3baa71" }
+                    }
                 >
-                    + 注释区域
+                    + 注释
                 </button>
                 <div style={{ flexGrow: 1 }} />
                 <div className={`file-menu ${fileMenuOpen ? "open" : ""}`} ref={fileMenuRef}>
@@ -1197,13 +1162,18 @@ export default function App() {
                     </button>
                     <div className="file-menu-dropdown" role="menu">
                         <button onClick={handleOpenClick}>打开...</button>
-                        <button
-                            onClick={() => void handleSave()}
-                            disabled={!isDirty && !currentFilePath && !currentFileHandle}
+                        <button 
+                            disabled={isNewEmpty} 
+                            onClick={handleSave}
                         >
                             保存
                         </button>
-                        <button onClick={() => void handleSaveAs()}>另存为...</button>
+                        <button 
+                            disabled={isNewEmpty} 
+                            onClick={handleSaveAs}
+                        >
+                            另存为...
+                        </button>
                     </div>
                 </div>
                 <input
@@ -1218,17 +1188,13 @@ export default function App() {
                 />
                 <button
                     className="theme-toggle"
-                    onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                    onClick={() => handleThemeChange(theme === "dark" ? "light" : "dark")}
                 >
                     {theme === "dark" ? "🌙" : "☀"}
                 </button>
                 <button
-                    className="theme-toggle"
-                    onClick={() => {
-                        setSettingsJsonText(JSON.stringify(codeProfiles, null, 2));
-                        setSettingsOpen(true);
-                    }}
-                    title="设置"
+                    className="settings-button"
+                    onClick={() => handleSettingsChange("新设置内容")}
                 >
                     ⚙
                 </button>
@@ -1740,4 +1706,13 @@ export default function App() {
             ) : null}
         </>
     );
+}
+
+declare global {
+    interface Window {
+        electronAPI: {
+            saveFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
+            readFile: (filePath: string) => Promise<string>;
+        };
+    }
 }
