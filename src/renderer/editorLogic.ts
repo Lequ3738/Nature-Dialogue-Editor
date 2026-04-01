@@ -67,7 +67,7 @@ export function addObject(
             w: 400,
             h: 300,
             text: "区域注释",
-            color: "#5865f2",
+            color: "#3baa71",
         };
         return { ...state, comments: [...state.comments, next], idCounter: state.idCounter + 1 };
     }
@@ -118,6 +118,10 @@ export function startConnect(
     return { ...state, connecting: null };
 }
 
+function escapeGmlString(str: string): string {
+    return str.replace(/"/g, '``').replace(/'/g, '`').replace(/\n/g, '#');
+}
+
 export function makeGml(state: EditorState): string {
     let gml = `// GM8 对话系统导出 (有向图结构)\n// 使用编辑器重新加载此文件可编辑布局\n\nvar _g, _n, _l;\n_g = ds_graph_create();\n\n`;
 
@@ -136,16 +140,16 @@ export function makeGml(state: EditorState): string {
         if (n.type === "node" && hasParentWithOutDegree2) {
             gml += `// Node #${n.id}\n_n[${n.id}] = ds_graph_node_add(_g, '\n`;
             gml += `    var _text; \n`;
-            gml += `    _text[lang_cn] = "${n.cn.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            gml += `    _text[lang_en] = "${n.en.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
+            gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;
+            gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
             if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
             gml += `    return _text[global.language];\n`;
             gml += `');\n\n`;
         } else {
             gml += `// Node #${n.id}\n_n[${n.id}] = ds_graph_node_add(_g, '\n`;
             gml += `    var _text; \n`;
-            gml += `    _text[lang_cn] = "${n.cn.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
-            gml += `    _text[lang_en] = "${n.en.replace(/"/g, '""').replace(/\n/g, "#")}";\n`;
+            gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;
+            gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
             gml += `    displayingText = _text[global.language];\n`;
             if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
             gml += `');\n\n`;
@@ -176,7 +180,7 @@ export function makeGml(state: EditorState): string {
 
     gml += `return _l;\n\n`;
 
-    // 写入元数据 (工程文件恢复)
+    // 写入元数据
     const meta = btoa(encodeURIComponent(JSON.stringify(state)));
     gml += `/* EDITOR_DATA:${meta} */`;
     return gml;

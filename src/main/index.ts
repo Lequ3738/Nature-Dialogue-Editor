@@ -17,6 +17,8 @@ function createWindow() {
     mainWindow.removeMenu();
     mainWindow.setMenuBarVisibility(false);
 
+    mainWindow.webContents.openDevTools({mode:'detach'});
+
     let isDirty = false;
     ipcMain.on("editor:dirty", (_event, payload: { dirty?: boolean }) => {
         isDirty = !!payload?.dirty;

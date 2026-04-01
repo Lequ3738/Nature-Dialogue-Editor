@@ -12,10 +12,11 @@
     "author": "Lequ",
     "license": "ISC",
     "devDependencies": {
-        "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/language": "^6.12.3",
         "@codemirror/state": "^6.6.0",
+        "@codemirror/stream-parser": "^0.19.9",
         "@codemirror/view": "^6.40.0",
+        "@lezer/highlight": "^1.2.3",
         "@types/node": "^22.10.2",
         "@types/react": "^19.2.14",
         "@types/react-dom": "^19.2.3",
@@ -55,5 +56,10 @@
     "dependencies": {
         "react": "^19.2.4",
         "react-dom": "^19.2.4"
+    },
+    "overrides": {
+        "@codemirror/state": "$@codemirror/state",
+        "@codemirror/view": "$@codemirror/view",
+        "@codemirror/language": "$@codemirror/language"
     }
 }

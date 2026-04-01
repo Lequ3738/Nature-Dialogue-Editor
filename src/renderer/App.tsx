@@ -12,7 +12,7 @@ import { createInitialState } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import fs from "node:fs";
 import path from "node:path";
-import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
+import CodeEditor, { KeywordGroup, type CodeStyleProfile } from "./CodeEditor";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -136,72 +136,106 @@ export default function App() {
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
+
+    const [profiles, setProfiles] = useState<CodeStyleProfile[]>([
+        {
+            name: "默认配置",
+            fontFamily: "Consolas, monospace",
+            fontSize: 17,
+            keywordGroups: [
+                { id: "1", name: "内置函数", colorLight: "#005cc5", colorDark: "#79c0ff", keywords: ["instance_create", "draw_text"] }
+            ]
+        }
+    ]);
+
+    const [activeIndex, setActiveIndex] = useState(0);
+    
+    // ... 设置面板中的编辑状态 ...
+    const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
+
+    // 导出功能
+    const handleExport = () => {
+        const data = JSON.stringify(profiles[activeIndex], null, 2);
+        const blob = new Blob([data], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${profiles[activeIndex].name}_config.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // 导入功能
+    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const imported = JSON.parse(event.target?.result as string);
+                // 简单校验
+                if (imported.keywordGroups) {
+                    setProfiles(prev => [...prev, imported]);
+                    alert("导入成功！已添加到配置列表。");
+                }
+            } catch (err) {
+                alert("导入失败：文件格式不正确");
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    const defaultProfile: CodeStyleProfile = {
+        name: "Default GML",
+        fontFamily: "Consolas, monospace",
+        fontSize: 14,
+        keywordGroups: [
+            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", keywords: ["instance_create", "draw_sprite"] },
+            { id: "g2", name: "自定义宏", colorLight: "#c678dd", colorDark: "#e2b93d", keywords: ["scr_player_move"] }
+        ]
+    };
+
+    // 3. 修正默认的本地存储结构，使其适配新的 keywordGroups
     const [codeProfiles, setCodeProfiles] = useState(() => {
         const defaults = {
             dark: {
                 active: 0,
-                profiles: [
-                    {
-                        name: "深色方案 A",
-                        fontFamily:
-                            "Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-                        fontSize: 12,
-                        functionColor: "#a855f7",
-                        rules: [
-                            { pattern: "if", color: "#60a5fa" },
-                            { pattern: "return", color: "#34d399" },
-                        ],
-                    },
-                    {
-                        name: "深色方案 B",
-                        fontFamily:
-                            "Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-                        fontSize: 13,
-                        functionColor: "#f472b6",
-                        rules: [
-                            { pattern: "var", color: "#fbbf24" },
-                            { pattern: "global", color: "#93c5fd" },
-                        ],
-                    },
-                ] as CodeStyleProfile[],
+                profiles: [{ ...defaultProfile, name: "深色方案" }] as CodeStyleProfile[],
             },
             light: {
                 active: 0,
-                profiles: [
-                    {
-                        name: "浅色方案 A",
-                        fontFamily:
-                            "Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-                        fontSize: 12,
-                        functionColor: "#7c3aed",
-                        rules: [
-                            { pattern: "if", color: "#2563eb" },
-                            { pattern: "return", color: "#059669" },
-                        ],
-                    },
-                    {
-                        name: "浅色方案 B",
-                        fontFamily:
-                            "Consolas, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-                        fontSize: 13,
-                        functionColor: "#be185d",
-                        rules: [
-                            { pattern: "var", color: "#b45309" },
-                            { pattern: "global", color: "#1d4ed8" },
-                        ],
-                    },
-                ] as CodeStyleProfile[],
+                profiles: [{ ...defaultProfile, name: "浅色方案" }] as CodeStyleProfile[],
             },
         };
         try {
             const raw = localStorage.getItem("dialogueEditor.codeProfiles");
             if (!raw) return defaults;
+            
             const parsed = JSON.parse(raw);
-            return parsed ?? defaults;
-        } catch {
+            
+            // --- 核心修复：数据结构迁移/检查 ---
+            const validateProfile = (p: any) => {
+                // 如果读取到的配置没有 keywordGroups，则强制初始化为一个空数组，防止 map 报错
+                if (!p.keywordGroups) {
+                    p.keywordGroups = [];
+                }
+                // 如果旧的 rules 还存在，可以尝试将其迁移（可选）
+                if (p.rules && p.keywordGroups.length === 0) {
+                    p.keywordGroups = [{ id: "legacy", name: "旧版规则", color: "#ffffff", keywords: p.rules.map((r: any) => r.pattern) }];
+                }
+                return p;
+            };
+    
+            if (parsed.dark) parsed.dark.profiles = parsed.dark.profiles.map(validateProfile);
+            if (parsed.light) parsed.light.profiles = parsed.light.profiles.map(validateProfile);
+    
+            return parsed;
+        } catch (e) {
+            console.error("加载配置失败:", e);
             return defaults;
         }
     });
+
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsJsonText, setSettingsJsonText] = useState<string>("");
     const activeProfile: CodeStyleProfile =
@@ -1120,7 +1154,9 @@ export default function App() {
             <div id="toolbar">
                 <button
                     onClick={() => {
-                        setState((prev) => addObject(prev, "node", windowSize.w, windowSize.h));
+                        setState((prev) => 
+                            addObject(prev, "node", windowSize.w, windowSize.h)
+                        );
                     }}
                 >
                     + 对话
@@ -1140,7 +1176,9 @@ export default function App() {
                 </button>
                 <button
                     onClick={() => {
-                        setState((prev) => addObject(prev, "comment", windowSize.w, windowSize.h));
+                        setState((prev) => 
+                            addObject(prev, "comment", windowSize.w, windowSize.h)
+                        );
                     }}
                     style={ theme === "dark" ? 
                         { background: "#288856" } : 
@@ -1161,18 +1199,22 @@ export default function App() {
                         文件 ▾
                     </button>
                     <div className="file-menu-dropdown" role="menu">
-                        <button onClick={handleOpenClick}>打开...</button>
+                        <button
+                            onClick={handleOpenClick}
+                        >
+                            📖 打开
+                        </button>
                         <button 
                             disabled={isNewEmpty} 
                             onClick={handleSave}
                         >
-                            保存
+                            💾 保存
                         </button>
                         <button 
                             disabled={isNewEmpty} 
                             onClick={handleSaveAs}
                         >
-                            另存为...
+                            💿 另存为
                         </button>
                     </div>
                 </div>
@@ -1190,14 +1232,16 @@ export default function App() {
                     className="theme-toggle"
                     onClick={() => handleThemeChange(theme === "dark" ? "light" : "dark")}
                 >
-                    {theme === "dark" ? "🌙" : "☀"}
+                    {theme === "dark" ? "🌙" : "🌞"}
                 </button>
                 <button
                     className="settings-button"
-                    onClick={() => handleSettingsChange("新设置内容")}
-                >
-                    ⚙
-                </button>
+                    onClick={() => {
+                        // 将当前主题的配置克隆一份到草稿中
+                        setDraftProfile(activeProfile || defaultProfile);
+                        setSettingsOpen(true);
+                    }}
+                >⚙️</button>
             </div>
 
             <div id="viewport" ref={viewportRef}>
@@ -1649,62 +1693,198 @@ export default function App() {
                                     />
                                 ))}
                             </div>
-                            <div style={{ flexGrow: 1 }} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                             <button onClick={deleteCurrent} style={{ background: "#f04747" }}>
                                 删除此节点
                             </button>
-                        </div>
-
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                            <button onClick={closeModal} style={{ background: "#4f545c" }}>
-                                取消
-                            </button>
-                            <button onClick={saveModal}>保存配置</button>
+                            <div style={{ display: "flex", gap: 10 }}>
+                                <button onClick={closeModal} style={{ background: "#4f545c" }}>
+                                    取消
+                                </button>
+                                <button onClick={saveModal}>保存</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             ) : null}
 
-            {settingsOpen ? (
-                <div id="modal-overlay" style={{ display: "flex" }}>
-                    <div id="modal">
-                        <h3 style={{ margin: 0 }}>编辑器设置</h3>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <label style={{ fontSize: 12, color: "#888" }}>
-                                代码样式（深/浅色各两套方案，含字体/字号/函数名颜色/关键字颜色；可导入导出）
+            {settingsOpen && draftProfile ? (
+                <div style={{
+                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                    background: "rgba(0,0,0,0.6)", zIndex: 9999,
+                    display: "flex", justifyContent: "center", alignItems: "center"
+                }}>
+                    <div style={{
+                        background: "#2f3136", padding: 24, borderRadius: 8,
+                        width: 600, maxHeight: "80vh", overflowY: "auto",
+                        display: "flex", flexDirection: "column", gap: 16, color: "#fff"
+                    }}>
+                        <h2 style={{ margin: 0 }}>编辑器设置</h2>
+
+                        <div className="import-export-bar">
+                            <button onClick={handleExport}>导出当前配置</button>
+                            <label className="button-label">
+                                导入配置
+                                <input type="file" accept=".txt" onChange={handleImport} style={{ display: 'none' }} />
                             </label>
-                            <textarea
-                                rows={12}
-                                value={settingsJsonText}
-                                onChange={(e) => setSettingsJsonText(e.target.value)}
-                            />
                         </div>
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                        
+                        {/* 字体设置 */}
+                        <div style={{ display: "flex", gap: 10 }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ display: "block", marginBottom: 5 }}>字体 (Font Family)</label>
+                                <input 
+                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff" }}
+                                    value={draftProfile.fontFamily} 
+                                    onChange={e => setDraftProfile({...draftProfile, fontFamily: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: "block", marginBottom: 5 }}>大小 (Size)</label>
+                                <input 
+                                    type="number"
+                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff" }}
+                                    value={draftProfile.fontSize} 
+                                    onChange={e => setDraftProfile({...draftProfile, fontSize: Number(e.target.value)})}
+                                />
+                            </div>
+                        </div>
+
+                        <hr style={{ borderColor: "#444" }}/>
+                        
+                        {/* 关键字分类设置 */}
+                        <h3>自定义高亮与补全列表</h3>
+                        {draftProfile.keywordGroups?.map((group, index) => (
+                            <div key={group.id} style={{
+                                border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12
+                            }}>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                                    <input 
+                                        placeholder="分组名称 (如：脚本/事件)"
+                                        style={{ flex: 1, padding: 8, background: "#202225", border: "none", color: "#fff" }}
+                                        value={group.name} 
+                                        onChange={e => {
+                                            const newGroups = [...draftProfile.keywordGroups];
+                                            newGroups[index].name = e.target.value;
+                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                        }}
+                                    />
+                                    <div className="color-pickers">
+                                        <label>浅色：<input type="color" value={group.colorLight} onChange={(e) => {
+                                            const newGroups = [...draftProfile.keywordGroups];
+                                            newGroups[index].colorLight = e.target.value;
+                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                        }}/></label>
+                                        <label>深色：<input type="color" value={group.colorDark} onChange={(e) => {
+                                            const newGroups = [...draftProfile.keywordGroups];
+                                            newGroups[index].colorDark = e.target.value;
+                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                        }}/></label>
+                                    </div>
+                                    <button 
+                                        style={{ background: "#ed4245", padding: "8px 12px", border: "none", color: "white" }}
+                                        onClick={() => {
+                                            const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
+                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                        }}
+                                    >
+                                        删除组
+                                    </button>
+                                </div>
+                                {/* 关键字输入框，以空格或逗号分隔 */}
+                                <textarea 
+                                    rows={3}
+                                    placeholder="在此输入关键字，使用空格分隔（例如：instance_create x y obj_player）"
+                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
+                                    value={group.keywords.join(" ")}
+                                    onChange={e => {
+                                        const newGroups = [...draftProfile.keywordGroups];
+                                        // 按空格或换行拆分词汇，过滤空词
+                                        newGroups[index].keywords = e.target.value.split(/[\s,]+/).filter(w => w);
+                                        setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                    }}
+                                />
+                            </div>
+                        ))}
+                        
+                        <button 
+                            style={{ background: "#5865F2", padding: "10px", border: "none", color: "white", borderRadius: 4 }}
+                            onClick={() => {
+                                const newGroups = [
+                                    ...draftProfile.keywordGroups, 
+                                    {
+                                        id: Date.now().toString(),
+                                        name: "新分组",
+                                        colorDark: "#ffffff", colorLight: "#000000",
+                                        keywords: []
+                                    }
+                                ];
+
+                                setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                            }}
+                        >
+                            + 添加关键字分组
+                        </button>
+
+                        {/* 保存/取消操作 */}
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
                             <button
                                 onClick={() => setSettingsOpen(false)}
-                                style={{ background: "#4f545c" }}
-                            >
-                                取消
-                            </button>
+                                style={{ background: "#4f545c", padding: "10px 20px", border: "none", color: "white", borderRadius: 4 }}
+                            >取消</button>
                             <button
                                 onClick={() => {
-                                    try {
-                                        const parsed = JSON.parse(settingsJsonText);
-                                        setCodeProfiles(parsed);
-                                    } catch {
-                                        alert("设置 JSON 格式错误，请检查后再保存。");
-                                        return;
-                                    }
+                                    // 将 draftProfile 深度合并回当前的 codeProfiles 中
+                                    setCodeProfiles((prev: any) => {
+                                        const newProfiles = JSON.parse(JSON.stringify(prev)); // 深拷贝
+                                        const currentTheme = newProfiles[theme];
+                                        currentTheme.profiles[currentTheme.active] = draftProfile;
+                                        return newProfiles;
+                                    });
                                     setSettingsOpen(false);
                                 }}
-                            >
-                                保存
-                            </button>
+                                style={{ background: "#43b581", padding: "10px 20px", border: "none", color: "white", borderRadius: 4 }}
+                            >保存</button>
                         </div>
                     </div>
                 </div>
             ) : null}
         </>
+    );
+}
+
+// 设置面板内部组件，用于处理单个分组，解决空格 Bug
+function GroupEditor({ group, onChange }: { group: KeywordGroup, onChange: (g: KeywordGroup) => void }) {
+    // 使用本地 state 维护关键字字符串，只有在失去焦点或特定时机才同步回父组件
+    // 或者直接在 onChange 时不进行 filter(k => k)，保留空格
+    const [rawKeywords, setRawKeywords] = useState(group.keywords.join(" "));
+
+    const handleTextChange = (val: string) => {
+        setRawKeywords(val);
+        // 这里不要过滤掉空格，确保输入顺畅
+        const keywordsArray = val.split(/\s+/); 
+        onChange({ ...group, keywords: keywordsArray });
+    };
+
+    return (
+        <div className="group-edit-item" style={{ border: "1px solid #444", padding: 10, marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 5 }}>
+                <input 
+                    placeholder="分组名称" 
+                    value={group.name} 
+                    onChange={e => onChange({ ...group, name: e.target.value })} 
+                />
+                <label>浅色: <input type="color" value={group.colorLight} onChange={e => onChange({ ...group, colorLight: e.target.value })} /></label>
+                <label>深色: <input type="color" value={group.colorDark} onChange={e => onChange({ ...group, colorDark: e.target.value })} /></label>
+            </div>
+            <textarea
+                style={{ width: "100%", height: 60 }}
+                placeholder="输入关键字，空格分隔"
+                value={rawKeywords}
+                onChange={e => handleTextChange(e.target.value)}
+            />
+        </div>
     );
 }
 
