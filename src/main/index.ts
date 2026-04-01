@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
@@ -19,6 +20,17 @@ function createWindow() {
     let isDirty = false;
     ipcMain.on("editor:dirty", (_event, payload: { dirty?: boolean }) => {
         isDirty = !!payload?.dirty;
+    });
+
+    // Handle file save requests from renderer process
+    ipcMain.handle("editor:save-file", async (_event, filePath: string, content: string) => {
+        try {
+            fs.writeFileSync(filePath, content, "utf8");
+            return { success: true };
+        } catch (error) {
+            console.error("Failed to save file:", error);
+            return { success: false, error: String(error) };
+        }
     });
 
     mainWindow.on("close", (e) => {

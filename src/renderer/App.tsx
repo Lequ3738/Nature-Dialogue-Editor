@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
     CommentBox,
     DragTarget,
@@ -1061,8 +1061,8 @@ export default function App() {
                 setIsDirty(false);
                 return;
             } catch (e) {
-                console.error(e);
-                alert("保存文件失败，已尝试使用“另存为”。");
+                console.error("File save failed:", e);
+                alert("保存文件失败，已尝试使用“另存为”。（错误代码：A001）");
                 setCurrentFileName(fallbackSavedName);
                 setIsDirty(false);
                 onExport();
@@ -1072,12 +1072,25 @@ export default function App() {
 
         if (currentFilePath) {
             try {
-                fs.writeFileSync(currentFilePath, gml, "utf8");
-                setIsDirty(false);
-                return;
+                const ipc = getIpcRenderer();
+                if (ipc) {
+                    // Use IPC to invoke main process file save
+                    const result = await ipc.invoke("editor:save-file", currentFilePath, gml);
+                    if (result?.success) {
+                        setIsDirty(false);
+                        return;
+                    } else {
+                        throw new Error(result?.error || "Unknown error");
+                    }
+                } else {
+                    // Fallback: try direct fs write (may fail in sandboxed environments)
+                    fs.writeFileSync(currentFilePath, gml, "utf8");
+                    setIsDirty(false);
+                    return;
+                }
             } catch (e) {
                 console.error(e);
-                alert("保存文件失败，已尝试使用“另存为”。");
+                alert("保存文件失败，已尝试使用“另存为”。（错误代码：A002）");
                 setCurrentFileName(fallbackSavedName);
                 setIsDirty(false);
                 onExport();
