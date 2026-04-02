@@ -132,7 +132,7 @@ export default function CodeEditor({ value, onChange, theme = "dark", profile, h
         // 2. 关键：滚动区域（决定了整个编辑框的背景色）
         ".cm-scroller": {
             fontFamily: profile.fontFamily, // 响应字体设置
-            backgroundColor: theme === "light" ? "#ffffff" : "#111827", // 响应背景色
+            backgroundColor: theme === "light" ? "#ffffff" : "#1E2024", // 响应背景色
         },
         // 3. 关键：内容区域（决定了代码文字的字体和颜色）
         ".cm-content": {
@@ -155,7 +155,7 @@ export default function CodeEditor({ value, onChange, theme = "dark", profile, h
 
     const extensions = useMemo(
         () => [gml, themeExt, highlightPlugin, customAutocomplete],
-        [highlightPlugin, themeExt, customAutocomplete]
+        [gml, themeExt, highlightPlugin, customAutocomplete]
     );
 
     return (

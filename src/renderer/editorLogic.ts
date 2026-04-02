@@ -142,7 +142,10 @@ export function makeGml(state: EditorState): string {
             gml += `    var _text; \n`;
             gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;
             gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            if (n.code) {
+                gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+                gml += `    //*/\n`;  // 防止用户未结束的多行注释将后面的内容注释掉
+            }
             gml += `    return _text[global.language];\n`;
             gml += `');\n\n`;
         } else {
@@ -151,7 +154,10 @@ export function makeGml(state: EditorState): string {
             gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;
             gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
             gml += `    displayingText = _text[global.language];\n`;
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            if (n.code) {
+                gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+                gml += `    //*/\n`;
+            }
             gml += `');\n\n`;
         }
     });

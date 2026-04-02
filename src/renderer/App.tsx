@@ -605,7 +605,10 @@ export default function App() {
         });
 
         const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
+            w = Math.max(0, w);
+            h = Math.max(0, h);
             const rr = Math.min(r, w / 2, h / 2);
+
             ctx.beginPath();
             ctx.moveTo(x + rr, y);
             ctx.arcTo(x + w, y, x + w, y + h, rr);
@@ -1292,7 +1295,7 @@ export default function App() {
                                         left: n.x,
                                         top: n.y,
                                         borderColor: n.color,
-                                        boxShadow: isConnecting ? "0 0 20px #f1c40f" : undefined,
+                                        boxShadow: isConnecting ? `0 0 20px ${n.color}` : undefined,
                                     }}
                                 >
                                     <div
@@ -1710,45 +1713,67 @@ export default function App() {
                         width: 600, maxHeight: "80vh", overflowY: "auto",
                         display: "flex", flexDirection: "column", gap: 16, color: "#fff"
                     }}>
-                        <h2 style={{ margin: 0 }}>编辑器设置</h2>
+                        <div style={{ 
+                            display: "flex", justifyContent: "space-between", 
+                            alignItems: "center", marginBottom: 5, 
+                            borderBottom: "1px solid #444", paddingBottom: 15 
+                        }}>
+                            <h3 style={{ margin: 0 }}>代码编辑器设置</h3>
+                            
+                            {/* 右对齐的按钮容器 */}
+                            <div style={{ display: "flex", gap: 10 }}>
+                                {/* 隐藏的真实输入框 */}
+                                <input
+                                    type="file" ref={fileInputRef}
+                                    style={{ display: "none" }}
+                                    accept=".txt" onChange={handleImport}
+                                />
+                                
+                                {/* 导入按钮 */}
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="imp-exp-button"
+                                >
+                                    导入配置
+                                </button>
 
-                        <div className="import-export-bar">
-                            <button onClick={handleExport}>导出当前配置</button>
-                            <label className="button-label">
-                                导入配置
-                                <input type="file" accept=".txt" onChange={handleImport} style={{ display: 'none' }} />
-                            </label>
+                                {/* 导出按钮 */}
+                                <button
+                                    onClick={handleExport}
+                                    className="imp-exp-button"
+                                >
+                                    导出配置
+                                </button>
+                            </div>
                         </div>
                         
                         {/* 字体设置 */}
-                        <div style={{ display: "flex", gap: 10 }}>
-                            <div style={{ flex: 1 }}>
-                                <label style={{ display: "block", marginBottom: 5 }}>字体 (Font Family)</label>
-                                <input 
-                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff" }}
-                                    value={draftProfile.fontFamily} 
-                                    onChange={e => setDraftProfile({...draftProfile, fontFamily: e.target.value})}
-                                />
-                            </div>
-                            <div>
-                                <label style={{ display: "block", marginBottom: 5 }}>大小 (Size)</label>
-                                <input 
-                                    type="number"
-                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff" }}
-                                    value={draftProfile.fontSize} 
-                                    onChange={e => setDraftProfile({...draftProfile, fontSize: Number(e.target.value)})}
-                                />
-                            </div>
+                        <div style={{
+                            display: "flex", borderBottom: "1px solid #444", paddingBottom: 15
+                        }}>
+                            <label style={{ display: "block", marginBottom: 2 }}>字体系列：</label>
+                            <input 
+                                style={{ width: "55%", padding: 8, background: "#202225", border: "none", color: "#fff", borderRadius: 5 }}
+                                value={draftProfile.fontFamily} 
+                                onChange={e => setDraftProfile({...draftProfile, fontFamily: e.target.value})}
+                            />
+                            <label style={{ display: "block", marginBottom: 2, marginLeft: 40 }}>大小：</label>
+                            <input 
+                                type="number"
+                                style={{ width: "10%", padding: 8, background: "#202225", border: "none", color: "#fff", borderRadius: 5 }}
+                                value={draftProfile.fontSize} 
+                                onChange={e => setDraftProfile({...draftProfile, fontSize: Number(e.target.value)})}
+                            />
                         </div>
 
-                        <hr style={{ borderColor: "#444" }}/>
-                        
                         {/* 关键字分类设置 */}
-                        <h3>自定义高亮与补全列表</h3>
-                        {draftProfile.keywordGroups?.map((group, index) => (
-                            <div key={group.id} style={{
-                                border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12
-                            }}>
+                        <h4 style={{ margin: 0 }}>自定义高亮</h4>
+
+                        <div style={{
+                            borderRadius: 8, maxHeight: "40vh", overflowY: "auto",
+                            display: "flex", flexDirection: "column", gap: 16, color: "#fff"
+                        }} className="custom-scroll">
+                            {draftProfile.keywordGroups?.map((group, index) => (
                                 <GroupEditor 
                                     key={group.id} 
                                     group={group} 
@@ -1762,11 +1787,10 @@ export default function App() {
                                         setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
                                     }}
                                 />
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                         
-                        <button 
-                            style={{ background: "#5865F2", padding: "10px", border: "none", color: "white", borderRadius: 4 }}
+                        <button
                             onClick={() => {
                                 const newGroups = [
                                     ...draftProfile.keywordGroups, 
@@ -1788,8 +1812,10 @@ export default function App() {
                         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
                             <button
                                 onClick={() => setSettingsOpen(false)}
-                                style={{ background: "#4f545c", padding: "10px 20px", border: "none", color: "white", borderRadius: 4 }}
-                            >取消</button>
+                                style={{ background: "#4f545c" }}
+                            >
+                                取消
+                            </button>
                             <button
                                 onClick={() => {
                                     // 5. 修复保存逻辑：直接将草稿覆写回当前激活的配置中
@@ -1800,8 +1826,9 @@ export default function App() {
                                     });
                                     setSettingsOpen(false);
                                 }}
-                                style={{ background: "#43b581", padding: "10px 20px", border: "none", color: "white", borderRadius: 4 }}
-                            >保存</button>
+                            >
+                                保存
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1828,11 +1855,20 @@ function GroupEditor({ group, onChange, onDelete }:
         <div style={{ border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                 <input 
-                    placeholder="分组名称 (如：脚本/事件)"
-                    style={{ flex: 1, padding: 8, background: "#202225", border: "none", color: "#fff" }}
+                    placeholder="分组名称"
+                    style={{
+                        flex: 1, padding: 8, background: "#202225", 
+                        border: "none", color: "#fff", borderRadius: 5
+                    }}
                     value={group.name} 
                     onChange={e => onChange({ ...group, name: e.target.value })} 
                 />
+                <button 
+                    style={{ background: "#ed4245" }}
+                    onClick={onDelete}
+                >
+                    删除
+                </button>
                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <label>浅色：
                         <input type="color" value={group.colorLight} onChange={e => onChange({ ...group, colorLight: e.target.value })} />
@@ -1841,17 +1877,11 @@ function GroupEditor({ group, onChange, onDelete }:
                         <input type="color" value={group.colorDark} onChange={e => onChange({ ...group, colorDark: e.target.value })} />
                     </label>
                 </div>
-                <button 
-                    style={{ background: "#ed4245", padding: "8px 12px", border: "none", color: "white", borderRadius: 4, cursor: "pointer" }}
-                    onClick={onDelete}
-                >
-                    删除组
-                </button>
             </div>
             <textarea
                 rows={3}
-                style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
-                placeholder="在此输入关键字，使用空格分隔（例如：instance_create x y obj_player）"
+                style={{ width: "97%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
+                placeholder="在此输入关键字，并使用空格分隔不同的关键字。"
                 value={rawKeywords}
                 onChange={e => handleTextChange(e.target.value)}
             />

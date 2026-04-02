@@ -10,6 +10,12 @@
     --minimap-bg: rgba(0, 0, 0, 0.8);
     --modal-overlay: rgba(0, 0, 0, 0.7);
     --shadow-strong: 0 12px 30px rgba(0, 0, 0, 0.35);
+
+    --scrollbar-size: 8px;
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: #CFCFCFAA;
+    --scrollbar-thumb-hover: #CFCFCF;
+    --scrollbar-back: #444;
 }
 
 :root[data-theme="light"] {
@@ -24,6 +30,10 @@
     --minimap-bg: rgba(255, 255, 255, 0.95);
     --modal-overlay: rgba(15, 23, 42, 0.2);
     --shadow-strong: 0 14px 34px rgba(15, 23, 42, 0.16);
+
+    --scrollbar-thumb: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb-hover: #5E5E5E;
+    --scrollbar-back: rgba(0, 0, 0, 0.12);
 }
 
 body,
@@ -38,6 +48,58 @@ html {
     font-family: 'Segoe UI', sans-serif;
     user-select: none;
     -webkit-user-select: none;
+}
+
+.custom-scroll {
+    scrollbar-width: thin; 
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+
+    overflow: auto;
+}
+
+.custom-scroll::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+}
+
+.custom-scroll::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 5px;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+.custom-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.custom-scroll::-webkit-scrollbar-track:vertical {
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--scrollbar-back) calc(50% - 0.5px),
+    var(--scrollbar-back) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+
+.custom-scroll::-webkit-scrollbar-track:horizontal {
+  background: linear-gradient(
+    to bottom,
+    transparent calc(50% - 0.5px),
+    var(--scrollbar-back) calc(50% - 0.5px),
+    var(--scrollbar-back) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
 }
 
 textarea,
@@ -66,7 +128,7 @@ input[type="password"] {
     box-shadow: var(--shadow-strong);
 }
 
-button {
+button, .button_styled {
     background: var(--accent);
     color: white;
     border: none;
@@ -427,4 +489,14 @@ input[type="color"] {
 :root[data-theme="light"] .file-menu-button {
     background: color-mix(in srgb, var(--panel) 92%, #e2e8f0);
     border: 1px solid color-mix(in srgb, var(--panel-border) 90%, transparent);
+}
+
+.imp-exp-button {
+    background: #4f545c;
+    padding: 6px 12px;
+    border: none;
+    color: white;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
 }

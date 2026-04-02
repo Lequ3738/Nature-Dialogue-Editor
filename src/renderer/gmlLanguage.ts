@@ -3,13 +3,16 @@ import { tags as t } from "@lezer/highlight";
 
 // 关键字
 export const gmlKeywordList = [
-    "var", "globalvar", "if", "then", "else", "for", "while", "do", "until", 
-    "repeat", "switch", "case", "default", "break", "continue", "with", "exit", "return"
+    "mod", "div", "if", "else", "switch", "default", "repeat", 
+    "while", "for", "do", "until", "with", "continue", "break", 
+    "exit", "return", "case", "and", "or", "xor", "not", "self", 
+    "other", "all", "noone", "global", "local", "var", "globalvar",
+    "then", "begin", "end"
 ];
 
 // 常量
 export const gmlBuiltinList = [
-    "true", "false", "pi", "self", "other", "all", "noone"
+    "true", "false", "pi"
 ];
 
 const gmlKeywords = new RegExp(`^(${gmlKeywordList.join('|')})$`);
