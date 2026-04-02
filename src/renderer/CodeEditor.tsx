@@ -62,7 +62,7 @@ export default function CodeEditor({ value, onChange, theme = "dark", profile, h
         decorations: DecorationSet;
         constructor(view: EditorView) { this.decorations = this.getDeco(view); }
         update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged/* || update.selectionSet*/) {
+            if (update.docChanged || update.viewportChanged) {
                 this.decorations = this.getDeco(update.view);
             }
         }
@@ -72,15 +72,16 @@ export default function CodeEditor({ value, onChange, theme = "dark", profile, h
                 syntaxTree(view.state).iterate({
                     from, to,
                     enter: (node) => {
-                        // 只处理单词节点
-                        if (node.name === "VariableName" || node.name === "Keyword" || node.name === "PropertyName") {
-                            const word = view.state.doc.sliceString(node.from, node.to);
-                            const customColor = rulesMap.get(word);
-                            if (customColor) {
-                                builder.add(node.from, node.to, Decoration.mark({
-                                    attributes: { style: `color: ${customColor}; font-weight: bold;` }
-                                }));
-                            }
+                        if (node.name === "Document" || node.name === "LineComment" || node.name === "BlockComment" || node.name === "String") {
+                            return;
+                        }
+                        const word = view.state.doc.sliceString(node.from, node.to);
+                        const customColor = rulesMap.get(word);
+                        if (customColor) {
+                            builder.add(node.from, node.to, Decoration.mark({
+                                // 必须加 !important，这样才能覆盖掉 CodeMirror 自带的主题和内置关键字的 CSS 类着色
+                                attributes: { style: `color: ${customColor} !important; font-weight: bold;` }
+                            }));
                         }
                     }
                 });

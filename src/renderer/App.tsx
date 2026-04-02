@@ -136,36 +136,75 @@ export default function App() {
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
-
-    const [profiles, setProfiles] = useState<CodeStyleProfile[]>([
-        {
-            name: "默认配置",
-            fontFamily: "Consolas, monospace",
-            fontSize: 17,
-            keywordGroups: [
-                { id: "1", name: "内置函数", colorLight: "#005cc5", colorDark: "#79c0ff", keywords: ["instance_create", "draw_text"] }
-            ]
-        }
-    ]);
-
-    const [activeIndex, setActiveIndex] = useState(0);
     
     // ... 设置面板中的编辑状态 ...
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
 
-    // 导出功能
+    const defaultProfile: CodeStyleProfile = {
+        name: "Default GML",
+        fontFamily: "Consolas, monospace",
+        fontSize: 16,
+        keywordGroups: [
+            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", keywords: ["instance_create", "draw_sprite"] },
+            { id: "g2", name: "自定义宏", colorLight: "#c678dd", colorDark: "#e2b93d", keywords: ["scr_player_move"] }
+        ]
+    };
+
+    // 数据迁移和验证辅助函数
+    const validateProfile = (p: any) => {
+        if (!p.keywordGroups) p.keywordGroups = [];
+        if (p.rules && p.keywordGroups.length === 0) {
+            p.keywordGroups = [{ id: "legacy", name: "旧版规则", colorLight: "#ffffff", colorDark: "#ffffff", keywords: p.rules.map((r: any) => r.pattern) }];
+        }
+        return p;
+    };
+
+    // 2. 将内部存储合二为一：统一为包含 active 索引和 profiles 列表的对象
+    type CodeProfileStore = { active: number; profiles: CodeStyleProfile[] };
+    const [codeProfiles, setCodeProfiles] = useState<CodeProfileStore>(() => {
+        const defaults: CodeProfileStore = { active: 0, profiles: [defaultProfile] };
+        try {
+            const raw = localStorage.getItem("dialogueEditor.codeProfiles");
+            if (!raw) return defaults;
+            const parsed = JSON.parse(raw);
+            
+            // 数据迁移：如果读取到的是旧版拆分深浅模式的数据，合并它
+            if (parsed.dark && Array.isArray(parsed.dark.profiles)) {
+                return {
+                    active: parsed.dark.active ?? 0,
+                    profiles: parsed.dark.profiles.map(validateProfile)
+                };
+            }
+            
+            // 正常的新版数据结构
+            if (Array.isArray(parsed.profiles)) {
+                return {
+                    active: parsed.active ?? 0,
+                    profiles: parsed.profiles.map(validateProfile)
+                };
+            }
+            return defaults;
+        } catch (e) {
+            console.error("加载配置失败:", e);
+            return defaults;
+        }
+    });
+
+    const activeProfile: CodeStyleProfile = codeProfiles.profiles[codeProfiles.active] ?? defaultProfile;
+
+    // 3. 修复导出功能：使用统一的 activeProfile
     const handleExport = () => {
-        const data = JSON.stringify(profiles[activeIndex], null, 2);
+        const data = JSON.stringify(activeProfile, null, 2);
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${profiles[activeIndex].name}_config.txt`;
+        a.download = `${activeProfile.name}_config.txt`;
         a.click();
         URL.revokeObjectURL(url);
     };
 
-    // 导入功能
+    // 4. 修复导入功能：将解析好的数据追加到统一的 profiles 列表中
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -173,74 +212,25 @@ export default function App() {
         reader.onload = (event) => {
             try {
                 const imported = JSON.parse(event.target?.result as string);
-                // 简单校验
                 if (imported.keywordGroups) {
-                    setProfiles(prev => [...prev, imported]);
+                    setCodeProfiles(prev => ({
+                        ...prev,
+                        profiles: [...prev.profiles, validateProfile(imported)]
+                    }));
                     alert("导入成功！已添加到配置列表。");
+                } else {
+                    alert("导入失败：文件格式不正确");
                 }
             } catch (err) {
                 alert("导入失败：文件格式不正确");
             }
+            e.target.value = ""; // 清空，保证可以重新导入同一文件
         };
         reader.readAsText(file);
     };
 
-    const defaultProfile: CodeStyleProfile = {
-        name: "Default GML",
-        fontFamily: "Consolas, monospace",
-        fontSize: 14,
-        keywordGroups: [
-            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", keywords: ["instance_create", "draw_sprite"] },
-            { id: "g2", name: "自定义宏", colorLight: "#c678dd", colorDark: "#e2b93d", keywords: ["scr_player_move"] }
-        ]
-    };
-
-    // 3. 修正默认的本地存储结构，使其适配新的 keywordGroups
-    const [codeProfiles, setCodeProfiles] = useState(() => {
-        const defaults = {
-            dark: {
-                active: 0,
-                profiles: [{ ...defaultProfile, name: "深色方案" }] as CodeStyleProfile[],
-            },
-            light: {
-                active: 0,
-                profiles: [{ ...defaultProfile, name: "浅色方案" }] as CodeStyleProfile[],
-            },
-        };
-        try {
-            const raw = localStorage.getItem("dialogueEditor.codeProfiles");
-            if (!raw) return defaults;
-            
-            const parsed = JSON.parse(raw);
-            
-            // --- 核心修复：数据结构迁移/检查 ---
-            const validateProfile = (p: any) => {
-                // 如果读取到的配置没有 keywordGroups，则强制初始化为一个空数组，防止 map 报错
-                if (!p.keywordGroups) {
-                    p.keywordGroups = [];
-                }
-                // 如果旧的 rules 还存在，可以尝试将其迁移（可选）
-                if (p.rules && p.keywordGroups.length === 0) {
-                    p.keywordGroups = [{ id: "legacy", name: "旧版规则", color: "#ffffff", keywords: p.rules.map((r: any) => r.pattern) }];
-                }
-                return p;
-            };
-    
-            if (parsed.dark) parsed.dark.profiles = parsed.dark.profiles.map(validateProfile);
-            if (parsed.light) parsed.light.profiles = parsed.light.profiles.map(validateProfile);
-    
-            return parsed;
-        } catch (e) {
-            console.error("加载配置失败:", e);
-            return defaults;
-        }
-    });
-
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsJsonText, setSettingsJsonText] = useState<string>("");
-    const activeProfile: CodeStyleProfile =
-        codeProfiles[theme]?.profiles?.[codeProfiles[theme]?.active ?? 0] ??
-        codeProfiles[theme]?.profiles?.[0];
 
     const viewportRef = useRef<HTMLDivElement | null>(null);
     const lineCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1759,50 +1749,17 @@ export default function App() {
                             <div key={group.id} style={{
                                 border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12
                             }}>
-                                <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                                    <input 
-                                        placeholder="分组名称 (如：脚本/事件)"
-                                        style={{ flex: 1, padding: 8, background: "#202225", border: "none", color: "#fff" }}
-                                        value={group.name} 
-                                        onChange={e => {
-                                            const newGroups = [...draftProfile.keywordGroups];
-                                            newGroups[index].name = e.target.value;
-                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
-                                        }}
-                                    />
-                                    <div className="color-pickers">
-                                        <label>浅色：<input type="color" value={group.colorLight} onChange={(e) => {
-                                            const newGroups = [...draftProfile.keywordGroups];
-                                            newGroups[index].colorLight = e.target.value;
-                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
-                                        }}/></label>
-                                        <label>深色：<input type="color" value={group.colorDark} onChange={(e) => {
-                                            const newGroups = [...draftProfile.keywordGroups];
-                                            newGroups[index].colorDark = e.target.value;
-                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
-                                        }}/></label>
-                                    </div>
-                                    <button 
-                                        style={{ background: "#ed4245", padding: "8px 12px", border: "none", color: "white" }}
-                                        onClick={() => {
-                                            const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
-                                            setDraftProfile({...draftProfile, keywordGroups: newGroups});
-                                        }}
-                                    >
-                                        删除组
-                                    </button>
-                                </div>
-                                {/* 关键字输入框，以空格或逗号分隔 */}
-                                <textarea 
-                                    rows={3}
-                                    placeholder="在此输入关键字，使用空格分隔（例如：instance_create x y obj_player）"
-                                    style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
-                                    value={group.keywords.join(" ")}
-                                    onChange={e => {
+                                <GroupEditor 
+                                    key={group.id} 
+                                    group={group} 
+                                    onChange={(updatedGroup) => {
                                         const newGroups = [...draftProfile.keywordGroups];
-                                        // 按空格或换行拆分词汇，过滤空词
-                                        newGroups[index].keywords = e.target.value.split(/[\s,]+/).filter(w => w);
-                                        setDraftProfile({...draftProfile, keywordGroups: newGroups});
+                                        newGroups[index] = updatedGroup;
+                                        setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
+                                    }}
+                                    onDelete={() => {
+                                        const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
+                                        setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
                                     }}
                                 />
                             </div>
@@ -1835,11 +1792,10 @@ export default function App() {
                             >取消</button>
                             <button
                                 onClick={() => {
-                                    // 将 draftProfile 深度合并回当前的 codeProfiles 中
-                                    setCodeProfiles((prev: any) => {
+                                    // 5. 修复保存逻辑：直接将草稿覆写回当前激活的配置中
+                                    setCodeProfiles((prev: CodeProfileStore) => {
                                         const newProfiles = JSON.parse(JSON.stringify(prev)); // 深拷贝
-                                        const currentTheme = newProfiles[theme];
-                                        currentTheme.profiles[currentTheme.active] = draftProfile;
+                                        newProfiles.profiles[newProfiles.active] = draftProfile;
                                         return newProfiles;
                                     });
                                     setSettingsOpen(false);
@@ -1855,32 +1811,47 @@ export default function App() {
 }
 
 // 设置面板内部组件，用于处理单个分组，解决空格 Bug
-function GroupEditor({ group, onChange }: { group: KeywordGroup, onChange: (g: KeywordGroup) => void }) {
-    // 使用本地 state 维护关键字字符串，只有在失去焦点或特定时机才同步回父组件
-    // 或者直接在 onChange 时不进行 filter(k => k)，保留空格
+function GroupEditor({ group, onChange, onDelete }: 
+    { group: KeywordGroup; onChange: (g: KeywordGroup) => void; onDelete: () => void; }) {
+    // 使用本地 state 维护关键字字符串，解决空格输入时由于重绘导致光标和空格丢失的问题
     const [rawKeywords, setRawKeywords] = useState(group.keywords.join(" "));
 
     const handleTextChange = (val: string) => {
-        setRawKeywords(val);
-        // 这里不要过滤掉空格，确保输入顺畅
-        const keywordsArray = val.split(/\s+/); 
+        setRawKeywords(val); // 保持输入框原始状态，允许尾随空格
+        
+        // 过滤出干净的单词数组存入配置，防止出现空字符串高亮报错
+        const keywordsArray = val.split(/\s+/).filter(Boolean); 
         onChange({ ...group, keywords: keywordsArray });
     };
 
     return (
-        <div className="group-edit-item" style={{ border: "1px solid #444", padding: 10, marginBottom: 10 }}>
-            <div style={{ display: "flex", gap: 10, marginBottom: 5 }}>
+        <div style={{ border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                 <input 
-                    placeholder="分组名称" 
+                    placeholder="分组名称 (如：脚本/事件)"
+                    style={{ flex: 1, padding: 8, background: "#202225", border: "none", color: "#fff" }}
                     value={group.name} 
                     onChange={e => onChange({ ...group, name: e.target.value })} 
                 />
-                <label>浅色: <input type="color" value={group.colorLight} onChange={e => onChange({ ...group, colorLight: e.target.value })} /></label>
-                <label>深色: <input type="color" value={group.colorDark} onChange={e => onChange({ ...group, colorDark: e.target.value })} /></label>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <label>浅色：
+                        <input type="color" value={group.colorLight} onChange={e => onChange({ ...group, colorLight: e.target.value })} />
+                    </label>
+                    <label>深色：
+                        <input type="color" value={group.colorDark} onChange={e => onChange({ ...group, colorDark: e.target.value })} />
+                    </label>
+                </div>
+                <button 
+                    style={{ background: "#ed4245", padding: "8px 12px", border: "none", color: "white", borderRadius: 4, cursor: "pointer" }}
+                    onClick={onDelete}
+                >
+                    删除组
+                </button>
             </div>
             <textarea
-                style={{ width: "100%", height: 60 }}
-                placeholder="输入关键字，空格分隔"
+                rows={3}
+                style={{ width: "100%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
+                placeholder="在此输入关键字，使用空格分隔（例如：instance_create x y obj_player）"
                 value={rawKeywords}
                 onChange={e => handleTextChange(e.target.value)}
             />
