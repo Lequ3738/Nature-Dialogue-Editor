@@ -13,6 +13,7 @@ import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from ".
 import fs from "node:fs";
 import path from "node:path";
 import CodeEditor, { KeywordGroup, type CodeStyleProfile } from "./CodeEditor";
+import { color } from "@uiw/react-codemirror";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -1310,7 +1311,7 @@ export default function App() {
                                         }
                                     >
                                         <span>
-                                            {isCond ? `CONDITION #${n.id}` : `DIALOGUE #${n.id}`}
+                                            {isCond ? `条件 #${n.id}` : `对话 #${n.id}`}
                                         </span>
                                         <span
                                             style={{ cursor: "pointer" }}
@@ -1324,13 +1325,24 @@ export default function App() {
                                     </div>
 
                                     <div className="node-body">
-                                        {n.cn}
-                                        {n.en ? (
-                                            <>
-                                                <hr style={{ opacity: 0.2 }} />
-                                                {n.en}
-                                            </>
-                                        ) : null}
+                                        {
+                                            isCond ? (
+                                                n.code ? n.code : 
+                                                <><span style={{color: "#888"}}>请添加有效的表达式。</span></>
+                                            ) : (
+                                                <>
+                                                    <span style={{color: "#888"}}>中文：</span> {
+                                                        n.cn ? n.cn :
+                                                        <><span style={{color: "#888"}}>无内容。</span></>
+                                                    }
+                                                    <hr style={{ opacity: 0.2 }} />
+                                                    <span style={{color: "#888"}}>英文：</span> {
+                                                        n.en ? n.en :
+                                                        <><span style={{color: "#888"}}>无内容。</span></>
+                                                    }
+                                                </>
+                                            )
+                                        }
                                     </div>
 
                                     <div className="node-footer">
@@ -1579,6 +1591,7 @@ export default function App() {
                                 rows={4}
                                 value={commentDraft}
                                 onChange={(e) => setCommentDraft(e.target.value)}
+                                className="custom-scroll"
                             />
                         </div>
                         <div className="color-row">
@@ -1607,7 +1620,7 @@ export default function App() {
                             <div style={{ display: "flex", gap: 10 }}>
                                 <button
                                     onClick={closeCommentModal}
-                                    style={{ background: "#4f545c" }}
+                                    className="secondary-button"
                                 >
                                     取消
                                 </button>
@@ -1635,6 +1648,7 @@ export default function App() {
                                     <label style={{ fontSize: 12, color: "#888" }}>中文</label>
                                     <textarea
                                         id="m-cn"
+                                        className="custom-scroll"
                                         rows={4}
                                         value={draft.cn}
                                         onChange={(e) =>
@@ -1646,6 +1660,7 @@ export default function App() {
                                     <label style={{ fontSize: 12, color: "#888" }}>英文</label>
                                     <textarea
                                         id="m-en"
+                                        className="custom-scroll"
                                         rows={4}
                                         value={draft.en}
                                         onChange={(e) =>
@@ -1692,7 +1707,7 @@ export default function App() {
                                 删除此节点
                             </button>
                             <div style={{ display: "flex", gap: 10 }}>
-                                <button onClick={closeModal} style={{ background: "#4f545c" }}>
+                                <button onClick={closeModal} className="secondary-button">
                                     取消
                                 </button>
                                 <button onClick={saveModal}>保存</button>
@@ -1703,20 +1718,11 @@ export default function App() {
             ) : null}
 
             {settingsOpen && draftProfile ? (
-                <div style={{
-                    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                    background: "rgba(0,0,0,0.6)", zIndex: 9999,
-                    display: "flex", justifyContent: "center", alignItems: "center"
-                }}>
-                    <div style={{
-                        background: "#2f3136", padding: 24, borderRadius: 8,
-                        width: 600, maxHeight: "80vh", overflowY: "auto",
-                        display: "flex", flexDirection: "column", gap: 16, color: "#fff"
-                    }}>
-                        <div style={{ 
-                            display: "flex", justifyContent: "space-between", 
-                            alignItems: "center", marginBottom: 5, 
-                            borderBottom: "1px solid #444", paddingBottom: 15 
+                <div id="config-back">
+                    <div id="config-overlay">
+                        <div id="config"
+                            style={{ 
+                                borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD"
                         }}>
                             <h3 style={{ margin: 0 }}>代码编辑器设置</h3>
                             
@@ -1749,18 +1755,30 @@ export default function App() {
                         
                         {/* 字体设置 */}
                         <div style={{
-                            display: "flex", borderBottom: "1px solid #444", paddingBottom: 15
+                            display: "flex",
+                            borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
+                            paddingBottom: 15
                         }}>
-                            <label style={{ display: "block", marginBottom: 2 }}>字体系列：</label>
+                            <label
+                                style={{ display: "block", marginBottom: 2, paddingTop: 3 }}
+                            >
+                                字体系列：
+                            </label>
                             <input 
-                                style={{ width: "55%", padding: 8, background: "#202225", border: "none", color: "#fff", borderRadius: 5 }}
+                                className="textarea-styled"
+                                style={{ width: "55%", padding: 8 }}
                                 value={draftProfile.fontFamily} 
                                 onChange={e => setDraftProfile({...draftProfile, fontFamily: e.target.value})}
                             />
-                            <label style={{ display: "block", marginBottom: 2, marginLeft: 40 }}>大小：</label>
+                            <label
+                                style={{ display: "block", marginBottom: 2, marginLeft: 40, paddingTop: 3 }}
+                            >
+                                大小：
+                            </label>
                             <input 
                                 type="number"
-                                style={{ width: "10%", padding: 8, background: "#202225", border: "none", color: "#fff", borderRadius: 5 }}
+                                className="textarea-styled"
+                                style={{ width: "10%", padding: 8 }}
                                 value={draftProfile.fontSize} 
                                 onChange={e => setDraftProfile({...draftProfile, fontSize: Number(e.target.value)})}
                             />
@@ -1771,12 +1789,13 @@ export default function App() {
 
                         <div style={{
                             borderRadius: 8, maxHeight: "40vh", overflowY: "auto",
-                            display: "flex", flexDirection: "column", gap: 16, color: "#fff"
+                            display: "flex", flexDirection: "column", gap: 16, color: "var(--text)"
                         }} className="custom-scroll">
                             {draftProfile.keywordGroups?.map((group, index) => (
                                 <GroupEditor 
                                     key={group.id} 
-                                    group={group} 
+                                    group={group}
+                                    theme={theme}
                                     onChange={(updatedGroup) => {
                                         const newGroups = [...draftProfile.keywordGroups];
                                         newGroups[index] = updatedGroup;
@@ -1812,7 +1831,7 @@ export default function App() {
                         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
                             <button
                                 onClick={() => setSettingsOpen(false)}
-                                style={{ background: "#4f545c" }}
+                                className="secondary-button"
                             >
                                 取消
                             </button>
@@ -1838,8 +1857,12 @@ export default function App() {
 }
 
 // 设置面板内部组件，用于处理单个分组，解决空格 Bug
-function GroupEditor({ group, onChange, onDelete }: 
-    { group: KeywordGroup; onChange: (g: KeywordGroup) => void; onDelete: () => void; }) {
+function GroupEditor({ group, theme, onChange, onDelete }: {
+    group: KeywordGroup;
+    theme: "dark" | "light"; 
+    onChange: (g: KeywordGroup) => void;
+    onDelete: () => void;
+}) {
     // 使用本地 state 维护关键字字符串，解决空格输入时由于重绘导致光标和空格丢失的问题
     const [rawKeywords, setRawKeywords] = useState(group.keywords.join(" "));
 
@@ -1852,14 +1875,15 @@ function GroupEditor({ group, onChange, onDelete }:
     };
 
     return (
-        <div style={{ border: "1px solid #444", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <div style={{
+            border: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
+            borderRadius: 8, padding: 12, marginBottom: 12
+        }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
                 <input 
                     placeholder="分组名称"
-                    style={{
-                        flex: 1, padding: 8, background: "#202225", 
-                        border: "none", color: "#fff", borderRadius: 5
-                    }}
+                    className="textarea-styled"
+                    style={{ flex: 1, padding: 8 }}
                     value={group.name} 
                     onChange={e => onChange({ ...group, name: e.target.value })} 
                 />
@@ -1869,18 +1893,25 @@ function GroupEditor({ group, onChange, onDelete }:
                 >
                     删除
                 </button>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <label>浅色：
-                        <input type="color" value={group.colorLight} onChange={e => onChange({ ...group, colorLight: e.target.value })} />
-                    </label>
-                    <label>深色：
-                        <input type="color" value={group.colorDark} onChange={e => onChange({ ...group, colorDark: e.target.value })} />
-                    </label>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                    <label>浅色：</label>
+                    <input type="color"
+                        value={group.colorLight}
+                        onChange={e => onChange({ ...group, colorLight: e.target.value })}
+                    />
+                </div>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                    <label>深色：</label>
+                    <input type="color" 
+                        value={group.colorDark} 
+                        onChange={e => onChange({ ...group, colorDark: e.target.value })}
+                    />
                 </div>
             </div>
             <textarea
                 rows={3}
-                style={{ width: "97%", padding: 8, background: "#202225", border: "none", color: "#fff", resize: "vertical" }}
+                className="custom-scroll"
+                style={{ width: "97%" }}
                 placeholder="在此输入关键字，并使用空格分隔不同的关键字。"
                 value={rawKeywords}
                 onChange={e => handleTextChange(e.target.value)}

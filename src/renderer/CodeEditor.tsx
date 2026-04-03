@@ -31,7 +31,10 @@ interface CodeEditorProps {
     height?: number;
 }
 
-export default function CodeEditor({ value, onChange, theme = "dark", profile, height = 300 }: CodeEditorProps) {
+export default function CodeEditor(
+    { value, onChange, theme = "dark", profile, height = 300 }: 
+    CodeEditorProps
+) {
     const [extensionsKey, setExtensionsKey] = useState(0);
 
     useEffect(() => {

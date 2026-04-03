@@ -79,7 +79,7 @@ export function addObject(
         type: type,
         x: placed.x,
         y: placed.y,
-        cn: type === "condition" ? "变量 > 0?" : "对话内容...",
+        cn: "",
         en: "",
         code: "",
         color: type === "condition" ? "#e67e22" : "#7289da",
