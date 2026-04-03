@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
     CommentBox,
     DragTarget,
@@ -168,30 +168,16 @@ export default function App() {
         return p;
     };
 
-    // 2. 将内部存储合二为一：统一为包含 active 索引和 profiles 列表的对象
-    type CodeProfileStore = { active: number; profiles: CodeStyleProfile[] };
-    const [codeProfiles, setCodeProfiles] = useState<CodeProfileStore>(() => {
-        const defaults: CodeProfileStore = { active: 0, profiles: [defaultProfile] };
+    const [codeProfile, setCodeProfile] = useState<CodeStyleProfile>(() => {
+        const defaults: CodeStyleProfile = defaultProfile;
         try {
-            const raw = localStorage.getItem("dialogueEditor.codeProfiles");
+            const raw = localStorage.getItem("dialogueEditor.codeProfile");
             if (!raw) return defaults;
             const parsed = JSON.parse(raw);
+
+            if (Array.isArray(parsed.profiles))
+                return parsed.profiles.map(validateProfile);
             
-            // 数据迁移：如果读取到的是旧版拆分深浅模式的数据，合并它
-            if (parsed.dark && Array.isArray(parsed.dark.profiles)) {
-                return {
-                    active: parsed.dark.active ?? 0,
-                    profiles: parsed.dark.profiles.map(validateProfile)
-                };
-            }
-            
-            // 正常的新版数据结构
-            if (Array.isArray(parsed.profiles)) {
-                return {
-                    active: parsed.active ?? 0,
-                    profiles: parsed.profiles.map(validateProfile)
-                };
-            }
             return defaults;
         } catch (e) {
             console.error("加载配置失败:", e);
@@ -199,41 +185,41 @@ export default function App() {
         }
     });
 
-    const activeProfile: CodeStyleProfile = codeProfiles.profiles[codeProfiles.active] ?? defaultProfile;
-
-    // 3. 修复导出功能：使用统一的 activeProfile
+    // 导出功能：将当前 draftProfile 以 JSON 格式保存到用户指定位置
     const handleExport = () => {
-        const data = JSON.stringify(activeProfile, null, 2);
+        const data = JSON.stringify(draftProfile, null, 2);
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${activeProfile.name}_config.txt`;
+        a.download = `${ draftProfile ? draftProfile.name : "新配置" }.txt`;
         a.click();
         URL.revokeObjectURL(url);
     };
 
-    // 4. 修复导入功能：将解析好的数据追加到统一的 profiles 列表中
+    // 导入功能：将解析好的数据添加到 codeProfile 中
     const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
                 const imported = JSON.parse(event.target?.result as string);
+                
+                // 基础校验：确保包含必要的 keywordGroups 字段
                 if (imported.keywordGroups) {
-                    setCodeProfiles(prev => ({
-                        ...prev,
-                        profiles: [...prev.profiles, validateProfile(imported)]
-                    }));
-                    alert("导入成功！已添加到配置列表。");
+                    setCodeProfile(validateProfile(imported));
+                    setDraftProfile(validateProfile(imported));
+                    
                 } else {
                     alert("导入失败：文件格式不正确");
                 }
             } catch (err) {
                 alert("导入失败：文件格式不正确");
             }
-            e.target.value = ""; // 清空，保证可以重新导入同一文件
+            // 清空 input，保证可以连续导入同一个文件进行覆盖测试
+            e.target.value = ""; 
         };
         reader.readAsText(file);
     };
@@ -267,6 +253,15 @@ export default function App() {
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
 
+    // 窗口缩放监听
+    const [tick, setTick] = useState(0);
+
+    useEffect(() => {
+        const handleResize = () => setTick(t => t + 1);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
+
     // 获取节点在屏幕上的真实宽高的辅助函数
     const getNodeBounds = (n: Node) => {
         const el = document.getElementById(`node-${n.id}`);
@@ -284,11 +279,11 @@ export default function App() {
 
     useEffect(() => {
         try {
-            localStorage.setItem("dialogueEditor.codeProfiles", JSON.stringify(codeProfiles));
+            localStorage.setItem("dialogueEditor.codeProfiles", JSON.stringify(codeProfile));
         } catch {
             // ignore
         }
-    }, [codeProfiles]);
+    }, [codeProfile]);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -427,8 +422,8 @@ export default function App() {
                 
                 minX = Math.min(minX, n.x);
                 minY = Math.min(minY, n.y);
-                maxX = Math.max(maxX, n.x + NODE_WIDTH);
-                maxY = Math.max(maxY, n.y + NODE_HEIGHT);
+                maxX = Math.max(maxX, n.x + w);
+                maxY = Math.max(maxY, n.y + h);
             });
             state.comments.forEach((c) => {
                 minX = Math.min(minX, c.x);
@@ -481,6 +476,7 @@ export default function App() {
         state.view.zoom,
         windowSize.w,
         windowSize.h,
+        tick
     ]);
 
     const minimapViewStyle = useMemo(
@@ -500,13 +496,34 @@ export default function App() {
     );
 
     // Draw edges whenever nodes/edges change.
-    useEffect(() => {
+    useLayoutEffect(() => {
         const canvas = lineCanvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const dpr = window.devicePixelRatio || 1;
+
+        // 直接获取画布当前的布局尺寸
+        const rect = canvas.getBoundingClientRect();
+        const logicalWidth = rect.width;
+        const logicalHeight = rect.height;
+
+        // 使用 Math.round 确保像素对齐，且只更新属性，不碰 style
+        const targetBufferWidth = Math.round(logicalWidth * dpr);
+        const targetBufferHeight = Math.round(logicalHeight * dpr);
+
+        if (canvas.width !== targetBufferWidth || canvas.height !== targetBufferHeight) {
+            canvas.width = targetBufferWidth;
+            canvas.height = targetBufferHeight;
+        }
+
+        // 重置变换并缩放，确保后续绘图指令按逻辑像素执行
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        // 清除画布（注意由于已经 scale 了，这里传逻辑尺寸即可）
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
         const { x: vX, y: vY, zoom } = state.view;
 
@@ -581,7 +598,7 @@ export default function App() {
             
             drawArrowHead(ctx, end.x, end.y, angle, 18 * zoom);
         });
-    }, [state.edges, state.nodes, state.view, windowSize]);
+    }, [state.edges, state.nodes, state.view, windowSize, tick]);
 
     // Draw minimap: render a scaled snapshot of the current workspace.
     useEffect(() => {
@@ -639,9 +656,10 @@ export default function App() {
         };
 
         const drawNode = (n: Node, isConnecting: boolean) => {
+            const bounds = getNodeBounds(n); // 获取真实尺寸
             const { x, y } = worldToMini(n.x, n.y);
-            const w = NODE_WIDTH * scale;
-            const h = NODE_HEIGHT * scale;
+            const w = bounds.w * scale;
+            const h = bounds.h * scale;
             const r = 10 * scale;
             const headerH = 30 * scale;
             const footerH = 26 * scale;
@@ -722,15 +740,17 @@ export default function App() {
             const toNode = state.nodes.find((n) => n.id === edge.toId);
             if (!fromNode || !toNode) return;
 
-            // 1. 获取带法向的世界坐标锚点
-            const startW = getNodeAnchor(fromNode, toNode, true);
-            const endW = getNodeAnchor(fromNode, toNode, false);
+            const fromBounds = getNodeBounds(fromNode);
+            const toBounds = getNodeBounds(toNode);
 
-            // 2. 映射到缩略图坐标
+            const startW = getNodeAnchor(fromBounds, toBounds, true);
+            const endW = getNodeAnchor(fromBounds, toBounds, false);
+
+            // 映射到缩略图坐标
             const startMini = worldToMini(startW.x, startW.y);
             const endMini = worldToMini(endW.x, endW.y);
 
-            // 3. 计算缩略图中的弯曲强度 (根据缩略图距离动态调整)
+            // 计算缩略图中的弯曲强度 (根据缩略图距离动态调整)
             const dx = endMini.x - startMini.x;
             const dy = endMini.y - startMini.y;
             const dist = Math.hypot(dx, dy);
@@ -741,13 +761,13 @@ export default function App() {
             const maxCurve = 60;
             const curveStrength = Math.min(maxCurve, Math.max(minCurve, dist * 0.4));
 
-            // 4. 使用法向 (nx, ny) 计算控制点
+            // 使用法向 (nx, ny) 计算控制点
             const cp1X = startMini.x + startW.nx * curveStrength;
             const cp1Y = startMini.y + startW.ny * curveStrength;
             const cp2X = endMini.x + endW.nx * curveStrength;
             const cp2Y = endMini.y + endW.ny * curveStrength;
 
-            // 5. 绘制贝塞尔曲线
+            // 绘制贝塞尔曲线
             ctx.beginPath();
             ctx.moveTo(startMini.x, startMini.y);
             ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endMini.x, endMini.y);
@@ -758,7 +778,7 @@ export default function App() {
             ctx.lineCap = "round";
             ctx.stroke();
 
-            // 6. 绘制商业级“飞镖”箭头
+            // 绘制商业级“飞镖”箭头
             ctx.fillStyle = ctx.strokeStyle;
             const tanX = endMini.x - cp2X;
             const tanY = endMini.y - cp2Y;
@@ -794,7 +814,7 @@ export default function App() {
         state.edges.forEach(drawEdge);
         // Nodes (front)
         state.nodes.forEach((n) => drawNode(n, connectingFromId === n.id));
-    }, [state.nodes, state.comments, state.edges, minimapMeta, theme, connectingFromId]);
+    }, [state.nodes, state.comments, state.edges, minimapMeta, theme, connectingFromId, tick]);
 
     useEffect(() => {
         const viewport = viewportRef.current;
@@ -1248,7 +1268,7 @@ export default function App() {
                     className="theme-toggle"
                     onClick={() => {
                         // 将当前主题的配置克隆一份到草稿中
-                        setDraftProfile(activeProfile || defaultProfile);
+                        setDraftProfile(codeProfile || defaultProfile);
                         setSettingsOpen(true);
                     }}
                 >⚙️</button>
@@ -1258,7 +1278,10 @@ export default function App() {
                 <canvas 
                     id="line-canvas" 
                     ref={lineCanvasRef} 
-                    style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 0 }} 
+                    style={{
+                        position: 'absolute', top: 0, left: 0, pointerEvents: 'none', 
+                        zIndex: 0, width: "100%", height: "100%",
+                    }} 
                 />
                 <div id="content-layer" style={{ ...viewportTransformStyle, zIndex: 1 }}>
                     <div id="objects-container">
@@ -1702,7 +1725,7 @@ export default function App() {
                             <CodeEditor
                                 value={draft.code}
                                 onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
-                                profile={activeProfile}
+                                profile={codeProfile}
                                 theme={theme}
                                 height={180}
                             />
@@ -1863,12 +1886,7 @@ export default function App() {
                             </button>
                             <button
                                 onClick={() => {
-                                    // 5. 修复保存逻辑：直接将草稿覆写回当前激活的配置中
-                                    setCodeProfiles((prev: CodeProfileStore) => {
-                                        const newProfiles = JSON.parse(JSON.stringify(prev)); // 深拷贝
-                                        newProfiles.profiles[newProfiles.active] = draftProfile;
-                                        return newProfiles;
-                                    });
+                                    setCodeProfile(draftProfile);
                                     setSettingsOpen(false);
                                 }}
                             >
@@ -1891,6 +1909,19 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
 }) {
     // 使用本地 state 维护关键字字符串，解决空格输入时由于重绘导致光标和空格丢失的问题
     const [rawKeywords, setRawKeywords] = useState(group.keywords.join(" "));
+
+    useEffect(() => {
+        // 比较当前输入框的单词，和外部 (group.keywords) 的单词是否一致
+        const currentArr = rawKeywords.split(/\s+/).filter(Boolean);
+        const isSame = currentArr.length === group.keywords.length && 
+                       currentArr.every((k, i) => k === group.keywords[i]);
+        
+        // 只有当真正不一致时（即触发了导入配置），才强制覆盖文本框内容
+        // 这样既能实现导入后自动刷新，又不会在正常打字时吃掉结尾的空格
+        if (!isSame) {
+            setRawKeywords(group.keywords.join(" "));
+        }
+    }, [group.keywords, rawKeywords]);
 
     const handleTextChange = (val: string) => {
         setRawKeywords(val); // 保持输入框原始状态，允许尾随空格

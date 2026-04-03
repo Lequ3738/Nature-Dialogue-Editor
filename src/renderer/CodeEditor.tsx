@@ -96,33 +96,46 @@ export default function CodeEditor(
     // --- 3. 代码补全生成器 ---
     const customAutocomplete = useMemo(() => {
         function gmlCompletions(context: CompletionContext) {
-            // 匹配正在输入的词
             let word = context.matchBefore(/\w*/);
             if (!word || (word.from === word.to && !context.explicit)) return null;
-
-            const options: any[] = [];
-
-            // 1. 添加 GM8 默认关键字
-            gmlKeywordList.forEach(k => options.push({ label: k, type: "keyword" }));
-            gmlBuiltinList.forEach(k => options.push({ label: k, type: "variable" }));
-
-            // 2. 添加用户自定义关键字
+    
+            const keyOf = (label: string) => label.trim();
+            const optionMap = new Map<string, any>();
+    
+            const putOption = (opt: any) => {
+                const label = String(opt.label ?? "").trim();
+                if (!label) return;
+                optionMap.set(keyOf(label), {
+                    ...opt,
+                    label,
+                });
+            };
+    
+            // 1. 默认关键字
+            gmlKeywordList.forEach(k => putOption({ label: k, type: "keyword" }));
+            gmlBuiltinList.forEach(k => putOption({ label: k, type: "constant" }));
+    
+            // 2. 用户自定义关键字
             profile.keywordGroups.forEach(group => {
                 group.keywords.forEach(k => {
-                    if (k.trim()) {
-                        options.push({ label: k.trim(), type: "function", info: `[${group.name}]` });
+                    const label = k.trim();
+                    if (label) {
+                        putOption({
+                            label,
+                            type: "function",
+                            info: `[${group.name}]`,
+                        });
                     }
                 });
             });
-
+    
             return {
                 from: word.from,
-                options: options,
-                validFor: /^\w*$/
+                options: Array.from(optionMap.values()),
+                validFor: /^\w*$/,
             };
         }
-
-        // 使用自定义补全 + 当前文档上下文补全 (completeAnyWord)
+    
         return autocompletion({ override: [gmlCompletions, completeAnyWord] });
     }, [profile]);
 
