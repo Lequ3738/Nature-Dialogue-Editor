@@ -91,31 +91,39 @@ function getIpcRenderer(): any | null {
 }
 
 function getNodeAnchor(
-    from: { x: number; y: number },
-    to: { x: number; y: number },
+    from: { x: number; y: number; w: number; h: number },
+    to: { x: number; y: number; w: number; h: number },
     isSource: boolean
-): { x: number; y: number } {
-    const centerFrom = { x: from.x + NODE_WIDTH / 2, y: from.y + NODE_HEIGHT / 2 };
-    const centerTo = { x: to.x + NODE_WIDTH / 2, y: to.y + NODE_HEIGHT / 2 };
+): { x: number; y: number; nx: number; ny: number } {
+    const centerFrom = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+    const centerTo = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
     const dx = centerTo.x - centerFrom.x;
     const dy = centerTo.y - centerFrom.y;
 
     const horizontal = Math.abs(dx) > Math.abs(dy);
+
     if (isSource) {
         if (horizontal) {
+            // 从右侧出 (nx: 1), 否则从左侧出 (nx: -1)
             return dx >= 0
-                ? { x: from.x + NODE_WIDTH, y: centerFrom.y }
-                : { x: from.x, y: centerFrom.y };
+                ? { x: from.x + from.w, y: centerFrom.y, nx: 1, ny: 0 }
+                : { x: from.x, y: centerFrom.y, nx: -1, ny: 0 };
         }
+        // 从底部出 (ny: 1), 否则从顶部出 (ny: -1)
         return dy >= 0
-            ? { x: centerFrom.x, y: from.y + NODE_HEIGHT }
-            : { x: centerFrom.x, y: from.y };
+            ? { x: centerFrom.x, y: from.y + from.h, nx: 0, ny: 1 }
+            : { x: centerFrom.x, y: from.y, nx: 0, ny: -1 };
     }
 
+    // 对于目标节点 (Destination)，法线方向应该向外
     if (horizontal) {
-        return dx >= 0 ? { x: to.x, y: centerTo.y } : { x: to.x + NODE_WIDTH, y: centerTo.y };
+        return dx >= 0
+            ? { x: to.x, y: centerTo.y, nx: -1, ny: 0 }
+            : { x: to.x + to.w, y: centerTo.y, nx: 1, ny: 0 };
     }
-    return dy >= 0 ? { x: centerTo.x, y: to.y } : { x: centerTo.x, y: to.y + NODE_HEIGHT };
+    return dy >= 0
+        ? { x: centerTo.x, y: to.y, nx: 0, ny: -1 }
+        : { x: centerTo.x, y: to.y + to.h, nx: 0, ny: 1 };
 }
 
 export default function App() {
@@ -258,6 +266,17 @@ export default function App() {
     const hasWorkspaceContent =
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
+
+    // 获取节点在屏幕上的真实宽高的辅助函数
+    const getNodeBounds = (n: Node) => {
+        const el = document.getElementById(`node-${n.id}`);
+        return {
+            x: n.x,
+            y: n.y,
+            w: el ? el.offsetWidth : 260, // 降级处理，默认260
+            h: el ? el.offsetHeight : 120 // 降级处理，默认120
+        };
+    };
 
     useEffect(() => {
         document.documentElement.setAttribute("data-theme", theme);
@@ -402,6 +421,10 @@ export default function App() {
             maxY = Number.NEGATIVE_INFINITY;
 
             state.nodes.forEach((n) => {
+                const el = document.getElementById(`node-${n.id}`);
+                const w = el ? el.offsetWidth : 260;
+                const h = el ? el.offsetHeight : 120;
+                
                 minX = Math.min(minX, n.x);
                 minY = Math.min(minY, n.y);
                 maxX = Math.max(maxX, n.x + NODE_WIDTH);
@@ -487,31 +510,22 @@ export default function App() {
 
         const { x: vX, y: vY, zoom } = state.view;
 
-        // 将世界坐标转换为屏幕坐标
         const worldToScreen = (wx: number, wy: number) => ({
             x: wx * zoom + vX,
             y: wy * zoom + vY
         });
 
-        const drawArrowHead = (tipX: number, tipY: number, angleRad: number, size: number) => {
-            // 把箭头尖端稍微从节点边缘“退后”，避免视觉上压在边框上
-            const inset = Math.min(6, size * 0.35);
-            const tipInsetX = tipX - Math.cos(angleRad) * inset;
-            const tipInsetY = tipY - Math.sin(angleRad) * inset;
-
-            const backX = tipInsetX - Math.cos(angleRad) * size;
-            const backY = tipInsetY - Math.sin(angleRad) * size;
-            const leftX = backX + Math.cos(angleRad + Math.PI / 2) * (size * 0.6);
-            const leftY = backY + Math.sin(angleRad + Math.PI / 2) * (size * 0.6);
-            const rightX = backX + Math.cos(angleRad - Math.PI / 2) * (size * 0.6);
-            const rightY = backY + Math.sin(angleRad - Math.PI / 2) * (size * 0.6);
+        // 优化为商业质感的飞镖形箭头
+        const drawArrowHead = (ctx: CanvasRenderingContext2D, tipX: number, tipY: number, angleRad: number, size: number) => {
             ctx.beginPath();
-            ctx.moveTo(tipInsetX, tipInsetY);
-            ctx.lineTo(leftX, leftY);
-            ctx.lineTo(rightX, rightY);
+            ctx.moveTo(tipX, tipY);
+            // 绘制左右两翼
+            ctx.lineTo(tipX - size * Math.cos(angleRad - Math.PI / 7), tipY - size * Math.sin(angleRad - Math.PI / 7));
+            // 尾部向内凹陷，形成飞镖质感
+            ctx.lineTo(tipX - size * 0.6 * Math.cos(angleRad), tipY - size * 0.6 * Math.sin(angleRad));
+            ctx.lineTo(tipX - size * Math.cos(angleRad + Math.PI / 7), tipY - size * Math.sin(angleRad + Math.PI / 7));
             ctx.closePath();
             ctx.fill();
-            ctx.stroke();
         };
 
         state.edges.forEach((edge) => {
@@ -519,63 +533,53 @@ export default function App() {
             const to = state.nodes.find((n) => n.id === edge.toId);
             if (!from || !to) return;
 
-            // 获取原始锚点（世界坐标）
-            const startW = getNodeAnchor(from, to, true);
-            const endW = getNodeAnchor(from, to, false);
+            // 获取带真实宽高的对象
+            const fromBounds = getNodeBounds(from);
+            const toBounds = getNodeBounds(to);
 
-            // 映射到屏幕坐标
+            // 传入 bounds 计算锚点
+            const startW = getNodeAnchor(fromBounds, toBounds, true);
+            const endW = getNodeAnchor(fromBounds, toBounds, false);
+
             const start = worldToScreen(startW.x, startW.y);
             const end = worldToScreen(endW.x, endW.y);
 
-            const startX = start.x;
-            const startY = start.y;
-            const endX = end.x;
-            const endY = end.y;
+            // 距离用于动态决定曲线的弯曲强度
+            const dist = Math.hypot(end.x - start.x, end.y - start.y);
+            
+            // 商业软件的精髓：设置最小弯曲强度，即便节点挨得很近，线也是圆润的而不会变成死板的直线
+            const minCurve = 60 * zoom; 
+            const maxCurve = 250 * zoom;
+            const curveStrength = Math.min(maxCurve, Math.max(minCurve, dist * 0.4));
 
-            const dx = endX - startX;
-            const dy = endY - startY;
-            const dist = Math.hypot(dx, dy);
-            const curveStrength = Math.min(180 * zoom, Math.max(60 * zoom, dist * 0.35));
-            const horizontal = Math.abs(dx) >= Math.abs(dy);
+            // 基于法线方向 (nx, ny) 延伸控制点，告别之前的 horizontal 乱跳问题
+            const cp1X = start.x + startW.nx * curveStrength;
+            const cp1Y = start.y + startW.ny * curveStrength;
+            
+            const cp2X = end.x + endW.nx * curveStrength;
+            const cp2Y = end.y + endW.ny * curveStrength;
 
-            let cp1X = startX;
-            let cp1Y = startY;
-            let cp2X = endX;
-            let cp2Y = endY;
-
-            if (horizontal) {
-                const s = dx >= 0 ? 1 : -1;
-                cp1X = startX + s * curveStrength;
-                cp1Y = startY;
-                cp2X = endX - s * curveStrength;
-                cp2Y = endY;
-            } else {
-                const s = dy >= 0 ? 1 : -1;
-                cp1X = startX;
-                cp1Y = startY + s * curveStrength;
-                cp2X = endX;
-                cp2Y = endY - s * curveStrength;
-            }
-
+            // 绘制平滑曲线
             ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY);
+            ctx.moveTo(start.x, start.y);
+            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, end.x, end.y);
 
             if (edge.type === "true") ctx.strokeStyle = "#43b581";
             else if (edge.type === "false") ctx.strokeStyle = "#f04747";
             else ctx.strokeStyle = "#7289da";
 
             ctx.lineWidth = Math.max(1, 3 * zoom);
+            ctx.lineCap = "round";
             ctx.stroke();
 
-            // Arrow head at end (directed graph)
+            // 计算终点切线角度，绘制箭头
             ctx.fillStyle = ctx.strokeStyle as string;
-            ctx.strokeStyle = ctx.fillStyle as string;
-            ctx.lineWidth = 1.5;
-            const tanX = endX - cp2X;
-            const tanY = endY - cp2Y;
+            // 终点的切线方向由第二个控制点 (cp2) 指向终点 (end) 决定
+            const tanX = end.x - cp2X;
+            const tanY = end.y - cp2Y;
             const angle = Math.atan2(tanY, tanX);
-            drawArrowHead(endX, endY, angle, 14);
+            
+            drawArrowHead(ctx, end.x, end.y, angle, 18 * zoom);
         });
     }, [state.edges, state.nodes, state.view, windowSize]);
 
@@ -690,14 +694,14 @@ export default function App() {
             const r = 6 * scale;
 
             // Fill (transparent)
-            ctx.fillStyle = theme === "light" ? "rgba(59,130,246,0.03)" : "rgba(255,255,255,0.02)";
+            ctx.fillStyle = `${c.color}19`;
             roundRect(x, y, w, h, r);
             ctx.fill();
 
             // Border dashed
             ctx.setLineDash([6 * scale, 5 * scale]);
             ctx.lineWidth = Math.max(1, 2 * scale);
-            ctx.strokeStyle = theme === "light" ? "rgba(100,116,139,0.9)" : "#9aa6bd";
+            ctx.strokeStyle = c.color;
             ctx.stroke();
             ctx.setLineDash([]);
 
@@ -705,8 +709,8 @@ export default function App() {
             const handleH = 18 * scale;
             const handleY = y - 28 * scale;
             const handleW = Math.max(30 * scale, w * 0.6);
-            ctx.fillStyle = theme === "light" ? "rgba(148,163,184,0.25)" : "rgba(148,163,184,0.18)";
-            ctx.strokeStyle = theme === "light" ? "rgba(100,116,139,0.65)" : "#7e899d";
+            ctx.fillStyle = c.color;
+            ctx.strokeStyle = c.color;
             ctx.lineWidth = Math.max(1, 1.5 * scale);
             roundRect(x, handleY, handleW, handleH, 6 * scale);
             ctx.fill();
@@ -718,73 +722,70 @@ export default function App() {
             const toNode = state.nodes.find((n) => n.id === edge.toId);
             if (!fromNode || !toNode) return;
 
-            const start = getNodeAnchor(fromNode, toNode, true);
-            const end = getNodeAnchor(fromNode, toNode, false);
-            const startMini = worldToMini(start.x, start.y);
-            const endMini = worldToMini(end.x, end.y);
+            // 1. 获取带法向的世界坐标锚点
+            const startW = getNodeAnchor(fromNode, toNode, true);
+            const endW = getNodeAnchor(fromNode, toNode, false);
 
-            const startX = startMini.x;
-            const startY = startMini.y;
-            const endX = endMini.x;
-            const endY = endMini.y;
+            // 2. 映射到缩略图坐标
+            const startMini = worldToMini(startW.x, startW.y);
+            const endMini = worldToMini(endW.x, endW.y);
 
-            const dx = endX - startX;
-            const dy = endY - startY;
+            // 3. 计算缩略图中的弯曲强度 (根据缩略图距离动态调整)
+            const dx = endMini.x - startMini.x;
+            const dy = endMini.y - startMini.y;
             const dist = Math.hypot(dx, dy);
-            const curveStrength = Math.min(40, Math.max(12, dist * 0.35));
-            const horizontal = Math.abs(dx) >= Math.abs(dy);
+            
+            // 缩略图尺度较小，我们将 min/max 强度调小 (对应主画布的 60-250)
+            // 使用刚才主画布同样的比例逻辑，但映射到缩略图的尺度
+            const minCurve = 15; 
+            const maxCurve = 60;
+            const curveStrength = Math.min(maxCurve, Math.max(minCurve, dist * 0.4));
 
-            let cp1X = startX;
-            let cp1Y = startY;
-            let cp2X = endX;
-            let cp2Y = endY;
+            // 4. 使用法向 (nx, ny) 计算控制点
+            const cp1X = startMini.x + startW.nx * curveStrength;
+            const cp1Y = startMini.y + startW.ny * curveStrength;
+            const cp2X = endMini.x + endW.nx * curveStrength;
+            const cp2Y = endMini.y + endW.ny * curveStrength;
 
-            if (horizontal) {
-                const s = dx >= 0 ? 1 : -1;
-                cp1X = startX + s * curveStrength;
-                cp1Y = startY;
-                cp2X = endX - s * curveStrength;
-                cp2Y = endY;
-            } else {
-                const s = dy >= 0 ? 1 : -1;
-                cp1X = startX;
-                cp1Y = startY + s * curveStrength;
-                cp2X = endX;
-                cp2Y = endY - s * curveStrength;
-            }
-
+            // 5. 绘制贝塞尔曲线
             ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY);
+            ctx.moveTo(startMini.x, startMini.y);
+            ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endMini.x, endMini.y);
+
             ctx.strokeStyle =
                 edge.type === "true" ? "#43b581" : edge.type === "false" ? "#f04747" : "#7289da";
             ctx.lineWidth = Math.max(1, 2 * scale);
+            ctx.lineCap = "round";
             ctx.stroke();
 
-            ctx.fillStyle = ctx.strokeStyle as any;
-            // Arrow head
-            const tanX = endX - cp2X;
-            const tanY = endY - cp2Y;
+            // 6. 绘制商业级“飞镖”箭头
+            ctx.fillStyle = ctx.strokeStyle;
+            const tanX = endMini.x - cp2X;
+            const tanY = endMini.y - cp2Y;
             const angle = Math.atan2(tanY, tanX);
-            const size = Math.max(6, 12 * scale);
-            const inset = Math.min(3, size * 0.35);
-            const tipX = endX - Math.cos(angle) * inset;
-            const tipY = endY - Math.sin(angle) * inset;
-            const backX = tipX - Math.cos(angle) * size;
-            const backY = tipY - Math.sin(angle) * size;
-            const leftX = backX + Math.cos(angle + Math.PI / 2) * (size * 0.6);
-            const leftY = backY + Math.sin(angle + Math.PI / 2) * (size * 0.6);
-            const rightX = backX + Math.cos(angle - Math.PI / 2) * (size * 0.6);
-            const rightY = backY + Math.sin(angle - Math.PI / 2) * (size * 0.6);
+            
+            // 缩略图箭头尺寸建议略小一点，避免遮挡
+            const arrowSize = Math.max(5, 10 * scale); 
+            
             ctx.beginPath();
-            ctx.moveTo(tipX, tipY);
-            ctx.lineTo(leftX, leftY);
-            ctx.lineTo(rightX, rightY);
+            ctx.moveTo(endMini.x, endMini.y);
+            // 左翼
+            ctx.lineTo(
+                endMini.x - arrowSize * Math.cos(angle - Math.PI / 7),
+                endMini.y - arrowSize * Math.sin(angle - Math.PI / 7)
+            );
+            // 尾部凹陷点 (中心线向回缩进)
+            ctx.lineTo(
+                endMini.x - arrowSize * 0.6 * Math.cos(angle),
+                endMini.y - arrowSize * 0.6 * Math.sin(angle)
+            );
+            // 右翼
+            ctx.lineTo(
+                endMini.x - arrowSize * Math.cos(angle + Math.PI / 7),
+                endMini.y - arrowSize * Math.sin(angle + Math.PI / 7)
+            );
             ctx.closePath();
             ctx.fill();
-            ctx.strokeStyle = ctx.fillStyle as any;
-            ctx.lineWidth = Math.max(1, 1.2 * scale);
-            ctx.stroke();
         };
 
         // Comment boxes (behind edges)
@@ -1244,7 +1245,7 @@ export default function App() {
                     {theme === "dark" ? "🌙" : "🌞"}
                 </button>
                 <button
-                    className="settings-button"
+                    className="theme-toggle"
                     onClick={() => {
                         // 将当前主题的配置克隆一份到草稿中
                         setDraftProfile(activeProfile || defaultProfile);
@@ -1309,6 +1310,7 @@ export default function App() {
                             return (
                                 <div
                                     key={n.id}
+                                    id={`node-${n.id}`}
                                     className="node"
                                     style={{
                                         left: n.x,
@@ -1368,7 +1370,9 @@ export default function App() {
                                             isCond ? (
                                             <>
                                                 <button
-                                                    className={`port ${hasEdge(state, n.id, "true") ? "connected" : ""}`}
+                                                    className={`port 
+                                                        ${hasEdge(state, n.id, "true") ? "connected" : ""}
+                                                    `}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setState((prev) =>
@@ -1394,7 +1398,10 @@ export default function App() {
                                                     TRUE
                                                 </button>
                                                 <button
-                                                    className={`port ${hasEdge(state, n.id, "false") ? "connected" : ""}`}
+                                                    className={
+                                                        `port ${hasEdge(state, n.id, "false") ? "connected" : ""}
+                                                        FALSE
+                                                    `}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setState((prev) =>

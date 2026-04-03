@@ -7,7 +7,7 @@
     --panel-border: #111;
     --subtle-bg: rgba(255, 255, 255, 0.04);
     --grid-dot: #333;
-    --minimap-bg: rgba(0, 0, 0, 0.4);
+    --minimap-bg: rgba(0, 0, 0, 0);
     --modal-overlay: rgba(0, 0, 0, 0.7);
     --shadow-strong: 0 12px 30px rgba(0, 0, 0, 0.35);
     --secondary-button: #4f545c;
@@ -30,7 +30,7 @@
     --panel-border: #dbe4f0;
     --subtle-bg: rgba(0, 0, 0, 0.03);
     --grid-dot: #ccd6e4;
-    --minimap-bg: rgba(255, 255, 255, 0.6);
+    --minimap-bg: rgba(255, 255, 255, 0);
     --modal-overlay: rgba(15, 23, 42, 0.2);
     --shadow-strong: 0 14px 34px rgba(15, 23, 42, 0.16);
     --secondary-button: #e3e8ed;
@@ -274,18 +274,23 @@ canvas {
     font-size: 10px;
     padding: 3px 8px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--panel) 80%, #707b8f);
+    background: var(--secondary-button);
     cursor: crosshair;
     border: none;
-    color: #fff;
+    color: var(--secondary-button-text);
 }
 
 .port:hover {
-    background: var(--accent);
+    filter: brightness(var(--secondary-button-cover));
 }
 
 .port.connected {
     background: #43b581;
+    color: white;
+}
+
+.port.connected.FALSE {
+    background: #b54343;
 }
 
 /* 注释框 */
@@ -492,6 +497,14 @@ input[type="color"] {
     background: color-mix(in srgb, var(--panel) 92%, var(--accent));
     padding: 6px 12px;
     font-size: 13px;
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 85%, transparent);
+    background: color-mix(in srgb, var(--panel) 96%, var(--accent));
+    box-shadow: none;
+}
+
+.file-menu-button:hover {
+    filter: brightness(var(--secondary-button-cover));
 }
 
 .file-menu-dropdown {
@@ -534,12 +547,6 @@ input[type="color"] {
     cursor: not-allowed;
 }
 
-.file-menu-button {
-    color: var(--text);
-    border: 1px solid color-mix(in srgb, var(--panel-border) 85%, transparent);
-    background: color-mix(in srgb, var(--panel) 96%, var(--accent));
-    box-shadow: none;
-}
 
 :root[data-theme="light"] .file-menu-button {
     background: color-mix(in srgb, var(--panel) 92%, #e2e8f0);
