@@ -12,7 +12,7 @@ import { createInitialState } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import fs from "node:fs";
 import path from "node:path";
-import CodeEditor, { KeywordGroup, type CodeStyleProfile } from "./CodeEditor";
+import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./CodeEditor";
 import { color } from "@uiw/react-codemirror";
 
 /**
@@ -154,8 +154,8 @@ export default function App() {
         fontFamily: "Consolas, monospace",
         fontSize: 16,
         keywordGroups: [
-            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", keywords: ["instance_create", "draw_sprite"] },
-            { id: "g2", name: "自定义宏", colorLight: "#c678dd", colorDark: "#e2b93d", keywords: ["scr_player_move"] }
+            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", type: "function", keywords: ["instance_create", "draw_sprite"] },
+            { id: "g2", name: "成员变量", colorLight: "#c678dd", colorDark: "#e2b93d", type: "variable", keywords: ["depth"] }
         ]
     };
 
@@ -1864,7 +1864,7 @@ export default function App() {
                                     ...draftProfile.keywordGroups, 
                                     {
                                         id: Date.now().toString(),
-                                        name: "新分组",
+                                        name: "新分组", type: "function" as KeywordType,
                                         colorDark: "#ffffff", colorLight: "#000000",
                                         keywords: []
                                     }
@@ -1937,6 +1937,15 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
             borderRadius: 8, padding: 12, marginBottom: 12
         }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                <select
+                    onChange={e => onChange({ ...group, type: e.target.value as KeywordType })}
+                    value={group.type}
+                >
+                    <option value="function">函数</option>
+                    <option value="variable">变量</option>
+                    <option value="keyword">关键字</option>
+                    <option value="constant">常量</option>
+                </select>
                 <input 
                     placeholder="分组名称"
                     className="textarea-styled"

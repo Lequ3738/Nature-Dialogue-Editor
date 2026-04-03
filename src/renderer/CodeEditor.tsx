@@ -4,13 +4,14 @@ import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate
 import { RangeSetBuilder } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { autocompletion, completeAnyWord, type CompletionContext } from "@codemirror/autocomplete";
-import { gml } from "./gmlLanguage";
-import { gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
+import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
 
-// --- 1. 重新定义数据结构 (类似 Notepad++ 的分类) ---
+export type KeywordType = "function" | "variable" | "keyword" | "constant";
+
 export type KeywordGroup = {
     id: string;
     name: string;        // 分组名，如 "内置函数", "自定义宏"
+    type: KeywordType;   // 类型，如 "function", "macro"，可用于补全时的图标区分
     colorLight: string;  // 浅色模式颜色
     colorDark: string;   // 深色模式颜色
     keywords: string[];  // 具体的关键字列表
@@ -61,37 +62,61 @@ export default function CodeEditor(
     }, [profile.keywordGroups, theme]);
 
     // 高亮插件逻辑
-    const highlightPlugin = useMemo(() => ViewPlugin.fromClass(class {
-        decorations: DecorationSet;
-        constructor(view: EditorView) { this.decorations = this.getDeco(view); }
-        update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged) {
-                this.decorations = this.getDeco(update.view);
+    const highlightPlugin = useMemo(() => {
+        return ViewPlugin.fromClass(class {
+            decorations: DecorationSet;
+
+            constructor(view: EditorView) {
+                this.decorations = this.buildDecorations(view);
             }
-        }
-        getDeco(view: EditorView) {
-            const builder = new RangeSetBuilder<Decoration>();
-            for (let { from, to } of view.visibleRanges) {
-                syntaxTree(view.state).iterate({
-                    from, to,
-                    enter: (node) => {
-                        if (node.name === "Document" || node.name === "LineComment" || node.name === "BlockComment" || node.name === "String") {
-                            return;
-                        }
-                        const word = view.state.doc.sliceString(node.from, node.to);
-                        const customColor = rulesMap.get(word);
-                        if (customColor) {
-                            builder.add(node.from, node.to, Decoration.mark({
-                                // 必须加 !important，这样才能覆盖掉 CodeMirror 自带的主题和内置关键字的 CSS 类着色
-                                attributes: { style: `color: ${customColor} !important; font-weight: bold;` }
-                            }));
-                        }
-                    }
-                });
+
+            update(update: ViewUpdate) {
+                if (update.docChanged || update.viewportChanged) {
+                    this.decorations = this.buildDecorations(update.view);
+                }
             }
-            return builder.finish();
-        }
-    }, { decorations: v => v.decorations }), [rulesMap]);
+
+            buildDecorations(view: EditorView) {
+                const builder = new RangeSetBuilder<Decoration>();
+                
+                for (let { from, to } of view.visibleRanges) {
+                    syntaxTree(view.state).iterate({
+                        from,
+                        to,
+                        enter: (node) => {
+                            // 核心：只拦截我们关心的词法节点类型
+                            // 注意：你在 tokenTable 中映射的 t.macroName，在这里的节点名称是 "MacroName"
+                            const isWordNode = 
+                                node.name === "Keyword" || 
+                                node.name === "VariableName" || 
+                                node.name === "MacroName" || 
+                                node.name === "Bool";
+                                
+                            if (isWordNode) {
+                                // 提取该节点的文本，并统一转为小写去匹配规则
+                                const text = view.state.sliceDoc(node.from, node.to).toLowerCase();
+                                const color = rulesMap.get(text);
+                                
+                                if (color) {
+                                    // 命中规则！注入强优先级的 CSS color
+                                    builder.add(
+                                        node.from,
+                                        node.to,
+                                        Decoration.mark({
+                                            attributes: { style: `color: ${color} !important;` }
+                                        })
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
+                return builder.finish();
+            }
+        }, {
+            decorations: v => v.decorations
+        });
+    }, [rulesMap]);
 
     // --- 3. 代码补全生成器 ---
     const customAutocomplete = useMemo(() => {
@@ -122,8 +147,8 @@ export default function CodeEditor(
                     if (label) {
                         putOption({
                             label,
-                            type: "function",
-                            info: `[${group.name}]`,
+                            type: group.type,
+                            info: `[${group.name}]`
                         });
                     }
                 });
@@ -168,6 +193,21 @@ export default function CodeEditor(
             backgroundColor: theme === "light" ? "#e2e8f0" : "#374151 !important",
         }
     }), [profile.fontFamily, profile.fontSize, theme, height]);
+
+    const overrideWords = useMemo(() => {
+        const set = new Set<string>();
+    
+        profile.keywordGroups.forEach(group => {
+            group.keywords.forEach(k => {
+                const word = k.trim().toLowerCase();
+                if (word) set.add(word);
+            });
+        });
+    
+        return set;
+    }, [profile.keywordGroups]);
+
+    const gml = useMemo(() => createGmlLanguage(overrideWords), [overrideWords]);
 
     const extensions = useMemo(
         () => [gml, themeExt, highlightPlugin, customAutocomplete],

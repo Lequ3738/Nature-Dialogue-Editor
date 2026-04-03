@@ -562,3 +562,57 @@ input[type="color"] {
     cursor: pointer;
     font-size: 13px;
 }
+
+select {
+    appearance: none; /* 移除原生箭头 */
+    background-color: var(--panel);
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    border-radius: 6px;
+    padding: 8px 32px 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+    
+    /* 自定义箭头：使用简洁的 Chevron 图标 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23888888'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 14px;
+    
+    /* 模拟 index.css 中的面板阴影 */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 悬停状态 */
+select:hover {
+    background-color: color-mix(in srgb, var(--panel) 95%, var(--accent));
+    border-color: color-mix(in srgb, var(--panel-border) 60%, transparent);
+}
+
+/* 聚焦状态（高亮边框） */
+select:focus, textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+textarea, input {
+    transition: all 0.2s ease;
+}
+
+/* 下拉菜单选项 (注意：原生 option 在不同浏览器样式受限) */
+select option {
+    background-color: var(--panel);
+    color: var(--text);
+    padding: 10px;
+}
+
+/* 禁用状态 */
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
