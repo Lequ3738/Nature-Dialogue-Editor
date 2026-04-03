@@ -7,7 +7,7 @@
     --panel-border: #111;
     --subtle-bg: rgba(255, 255, 255, 0.04);
     --grid-dot: #333;
-    --minimap-bg: rgba(0, 0, 0, 0.8);
+    --minimap-bg: rgba(0, 0, 0, 0.4);
     --modal-overlay: rgba(0, 0, 0, 0.7);
     --shadow-strong: 0 12px 30px rgba(0, 0, 0, 0.35);
     --secondary-button: #4f545c;
@@ -30,7 +30,7 @@
     --panel-border: #dbe4f0;
     --subtle-bg: rgba(0, 0, 0, 0.03);
     --grid-dot: #ccd6e4;
-    --minimap-bg: rgba(255, 255, 255, 0.95);
+    --minimap-bg: rgba(255, 255, 255, 0.6);
     --modal-overlay: rgba(15, 23, 42, 0.2);
     --shadow-strong: 0 14px 34px rgba(15, 23, 42, 0.16);
     --secondary-button: #e3e8ed;
@@ -335,6 +335,7 @@ canvas {
     z-index: 2000;
     box-shadow: var(--shadow-strong);
     overflow: hidden;
+    backdrop-filter: blur(3px);
 }
 
 #minimap-canvas {

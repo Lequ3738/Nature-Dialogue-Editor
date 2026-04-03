@@ -373,8 +373,8 @@ export default function App() {
     // Initialize canvas sizes.
     useEffect(() => {
         if (lineCanvasRef.current) {
-            lineCanvasRef.current.width = 10000;
-            lineCanvasRef.current.height = 10000;
+            lineCanvasRef.current.width = window.innerWidth;
+            lineCanvasRef.current.height = window.innerHeight;
         }
         if (minimapCanvasRef.current) {
             const dpr = window.devicePixelRatio || 1;
@@ -483,7 +483,15 @@ export default function App() {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, 10000, 10000);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const { x: vX, y: vY, zoom } = state.view;
+
+        // 将世界坐标转换为屏幕坐标
+        const worldToScreen = (wx: number, wy: number) => ({
+            x: wx * zoom + vX,
+            y: wy * zoom + vY
+        });
 
         const drawArrowHead = (tipX: number, tipY: number, angleRad: number, size: number) => {
             // 把箭头尖端稍微从节点边缘“退后”，避免视觉上压在边框上
@@ -511,16 +519,23 @@ export default function App() {
             const to = state.nodes.find((n) => n.id === edge.toId);
             if (!from || !to) return;
 
-            const start = getNodeAnchor(from, to, true);
-            const end = getNodeAnchor(from, to, false);
+            // 获取原始锚点（世界坐标）
+            const startW = getNodeAnchor(from, to, true);
+            const endW = getNodeAnchor(from, to, false);
+
+            // 映射到屏幕坐标
+            const start = worldToScreen(startW.x, startW.y);
+            const end = worldToScreen(endW.x, endW.y);
+
             const startX = start.x;
             const startY = start.y;
             const endX = end.x;
             const endY = end.y;
+
             const dx = endX - startX;
             const dy = endY - startY;
             const dist = Math.hypot(dx, dy);
-            const curveStrength = Math.min(180, Math.max(60, dist * 0.35));
+            const curveStrength = Math.min(180 * zoom, Math.max(60 * zoom, dist * 0.35));
             const horizontal = Math.abs(dx) >= Math.abs(dy);
 
             let cp1X = startX;
@@ -550,7 +565,7 @@ export default function App() {
             else if (edge.type === "false") ctx.strokeStyle = "#f04747";
             else ctx.strokeStyle = "#7289da";
 
-            ctx.lineWidth = 3;
+            ctx.lineWidth = Math.max(1, 3 * zoom);
             ctx.stroke();
 
             // Arrow head at end (directed graph)
@@ -562,7 +577,7 @@ export default function App() {
             const angle = Math.atan2(tanY, tanX);
             drawArrowHead(endX, endY, angle, 14);
         });
-    }, [state.edges, state.nodes]);
+    }, [state.edges, state.nodes, state.view, windowSize]);
 
     // Draw minimap: render a scaled snapshot of the current workspace.
     useEffect(() => {
@@ -1239,9 +1254,12 @@ export default function App() {
             </div>
 
             <div id="viewport" ref={viewportRef}>
-                <div id="content-layer" style={viewportTransformStyle}>
-                    <canvas id="line-canvas" ref={lineCanvasRef} />
-
+                <canvas 
+                    id="line-canvas" 
+                    ref={lineCanvasRef} 
+                    style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 0 }} 
+                />
+                <div id="content-layer" style={{ ...viewportTransformStyle, zIndex: 1 }}>
                     <div id="objects-container">
                         {state.comments.map((c) => (
                             <div
@@ -1346,7 +1364,8 @@ export default function App() {
                                     </div>
 
                                     <div className="node-footer">
-                                        {isCond ? (
+                                        {
+                                            isCond ? (
                                             <>
                                                 <button
                                                     className={`port ${hasEdge(state, n.id, "true") ? "connected" : ""}`}
@@ -1915,6 +1934,7 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
                 placeholder="在此输入关键字，并使用空格分隔不同的关键字。"
                 value={rawKeywords}
                 onChange={e => handleTextChange(e.target.value)}
+                spellCheck="false"
             />
         </div>
     );
