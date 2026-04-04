@@ -47,10 +47,10 @@ export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
             const key = normalize(word);
 
             // 先看规则表：命中后，不再走 keyword / builtin 分类
-            if (overrideWords.has(key)) return "customKeyword";
+            if (overrideWords.has(key)) return "function";
 
             if (gmlKeywords.test(word)) return "keyword";
-            if (gmlBuiltins.test(word)) return "bool";
+            if (gmlBuiltins.test(word)) return "constant";
 
             if (stream.peek() === "(") return "function";
 
@@ -109,7 +109,7 @@ export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
             function: t.function(t.variableName),
             variableName: t.variableName,
             punctuation: t.punctuation,
-            customKeyword: t.macroName
+            constant: t.constant(t.variableName),
         },
     });
 }

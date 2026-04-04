@@ -63,6 +63,16 @@ function createWindow() {
         }
     });
 
+    ipcMain.handle("editor:default-profile", () => {
+        return dialog.showMessageBoxSync(mainWindow, {
+            type: "warning",
+            buttons: ["取消", "继续"],
+            defaultId: 0,
+            cancelId: 0,
+            message: "将会覆盖现有的代码编辑器配置，是否继续？",
+        });
+    });
+
     mainWindow.on("close", (e) => {
         if (!isDirty) return;
         const res = dialog.showMessageBoxSync(mainWindow, {

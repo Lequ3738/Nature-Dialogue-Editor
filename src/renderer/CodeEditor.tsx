@@ -62,61 +62,56 @@ export default function CodeEditor(
     }, [profile.keywordGroups, theme]);
 
     // 高亮插件逻辑
-    const highlightPlugin = useMemo(() => {
-        return ViewPlugin.fromClass(class {
-            decorations: DecorationSet;
+    const highlightPlugin = useMemo(() => ViewPlugin.fromClass(class {
+        decorations: DecorationSet;
 
-            constructor(view: EditorView) {
-                this.decorations = this.buildDecorations(view);
+        constructor(view: EditorView) {
+            this.decorations = this.buildDecorations(view);
+        }
+
+        update(update: ViewUpdate) {
+            if (update.docChanged || update.viewportChanged) {
+                this.decorations = this.buildDecorations(update.view);
             }
+        }
 
-            update(update: ViewUpdate) {
-                if (update.docChanged || update.viewportChanged) {
-                    this.decorations = this.buildDecorations(update.view);
-                }
-            }
-
-            buildDecorations(view: EditorView) {
-                const builder = new RangeSetBuilder<Decoration>();
-                
-                for (let { from, to } of view.visibleRanges) {
-                    syntaxTree(view.state).iterate({
-                        from,
-                        to,
-                        enter: (node) => {
-                            // 核心：只拦截我们关心的词法节点类型
-                            // 注意：你在 tokenTable 中映射的 t.macroName，在这里的节点名称是 "MacroName"
-                            const isWordNode = 
-                                node.name === "Keyword" || 
-                                node.name === "VariableName" || 
-                                node.name === "MacroName" || 
-                                node.name === "Bool";
-                                
-                            if (isWordNode) {
-                                // 提取该节点的文本，并统一转为小写去匹配规则
-                                const text = view.state.sliceDoc(node.from, node.to).toLowerCase();
-                                const color = rulesMap.get(text);
-                                
-                                if (color) {
-                                    // 命中规则！注入强优先级的 CSS color
-                                    builder.add(
-                                        node.from,
-                                        node.to,
-                                        Decoration.mark({
-                                            attributes: { style: `color: ${color} !important;` }
-                                        })
-                                    );
-                                }
+        buildDecorations(view: EditorView) {
+            const builder = new RangeSetBuilder<Decoration>();
+            
+            for (let { from, to } of view.visibleRanges) {
+                syntaxTree(view.state).iterate({
+                    from, to,
+                    enter: (node) => {
+                        // 核心：只拦截我们关心的词法节点类型
+                        const isWordNode = 
+                            node.name === "keyword" || 
+                            node.name === "variableName" || 
+                            node.name === "constant" || 
+                            node.name === "function";
+                            
+                        if (isWordNode) {
+                            const text = view.state.sliceDoc(node.from, node.to);
+                            const color = rulesMap.get(text);
+                            
+                            if (color) {
+                                builder.add(
+                                    node.from, node.to,
+                                    Decoration.mark({
+                                        attributes: { style: `color: ${color} !important; ${
+                                            node.name === "keyword" ? "font-weight: bold;" : ""
+                                        }` }
+                                    })
+                                );
                             }
                         }
-                    });
-                }
-                return builder.finish();
+                    }
+                });
             }
-        }, {
-            decorations: v => v.decorations
-        });
-    }, [rulesMap]);
+            return builder.finish();
+        }
+    }, {
+        decorations: v => v.decorations
+    }) , [rulesMap]);
 
     // --- 3. 代码补全生成器 ---
     const customAutocomplete = useMemo(() => {
@@ -124,16 +119,12 @@ export default function CodeEditor(
             let word = context.matchBefore(/\w*/);
             if (!word || (word.from === word.to && !context.explicit)) return null;
     
-            const keyOf = (label: string) => label.trim();
             const optionMap = new Map<string, any>();
     
             const putOption = (opt: any) => {
                 const label = String(opt.label ?? "").trim();
                 if (!label) return;
-                optionMap.set(keyOf(label), {
-                    ...opt,
-                    label,
-                });
+                optionMap.set(label, opt);
             };
     
             // 1. 默认关键字
@@ -199,7 +190,7 @@ export default function CodeEditor(
     
         profile.keywordGroups.forEach(group => {
             group.keywords.forEach(k => {
-                const word = k.trim().toLowerCase();
+                const word = k.trim();
                 if (word) set.add(word);
             });
         });

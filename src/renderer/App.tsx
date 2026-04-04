@@ -1,19 +1,9 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type {
-    CommentBox,
-    DragTarget,
-    Edge,
-    EdgeType,
-    EditorState,
-    Node,
-    Resizing,
-} from "./editorTypes";
-import { createInitialState } from "./editorTypes";
+import type { CommentBox, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
+import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
-import fs from "node:fs";
 import path from "node:path";
 import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./CodeEditor";
-import { color } from "@uiw/react-codemirror";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -128,7 +118,7 @@ function getNodeAnchor(
 
 export default function App() {
     const [state, setState] = useState<EditorState>(() => createInitialState());
-    const [theme, setTheme] = useState<"dark" | "light">("dark");
+    const [theme, setTheme] = useState<"dark" | "light">(localStorage.getItem("dialogueEditor.theme") === "light" ? "light" : "dark");
     const [currentFileName, setCurrentFileName] = useState<string>("新文件");
     const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
     const [currentFileHandle, setCurrentFileHandle] = useState<FileHandle | null>(null);
@@ -149,16 +139,6 @@ export default function App() {
     // ... 设置面板中的编辑状态 ...
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
 
-    const defaultProfile: CodeStyleProfile = {
-        name: "Default GML",
-        fontFamily: "Consolas, monospace",
-        fontSize: 16,
-        keywordGroups: [
-            { id: "g1", name: "内置函数", colorLight: "#e2b93d", colorDark: "#e2b93d", type: "function", keywords: ["instance_create", "draw_sprite"] },
-            { id: "g2", name: "成员变量", colorLight: "#c678dd", colorDark: "#e2b93d", type: "variable", keywords: ["depth"] }
-        ]
-    };
-
     // 数据迁移和验证辅助函数
     const validateProfile = (p: any) => {
         if (!p.keywordGroups) p.keywordGroups = [];
@@ -169,21 +149,25 @@ export default function App() {
     };
 
     const [codeProfile, setCodeProfile] = useState<CodeStyleProfile>(() => {
-        const defaults: CodeStyleProfile = defaultProfile;
+        let profile = defaultProfile;
         try {
             const raw = localStorage.getItem("dialogueEditor.codeProfile");
-            if (!raw) return defaults;
-            const parsed = JSON.parse(raw);
-
-            if (Array.isArray(parsed.profiles))
-                return parsed.profiles.map(validateProfile);
-            
-            return defaults;
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed)
+                    profile = validateProfile(parsed);
+            }
         } catch (e) {
             console.error("加载配置失败:", e);
-            return defaults;
         }
+
+        console.log("Loaded code profile:", profile);
+        return profile;
     });
+
+    useEffect(() => {
+        setDraftProfile(codeProfile);
+    }, [codeProfile]);
 
     // 导出功能：将当前 draftProfile 以 JSON 格式保存到用户指定位置
     const handleExport = () => {
@@ -210,8 +194,6 @@ export default function App() {
                 // 基础校验：确保包含必要的 keywordGroups 字段
                 if (imported.keywordGroups) {
                     setCodeProfile(validateProfile(imported));
-                    setDraftProfile(validateProfile(imported));
-                    
                 } else {
                     alert("导入失败：文件格式不正确");
                 }
@@ -278,11 +260,8 @@ export default function App() {
     }, [theme]);
 
     useEffect(() => {
-        try {
-            localStorage.setItem("dialogueEditor.codeProfiles", JSON.stringify(codeProfile));
-        } catch {
-            // ignore
-        }
+        console.log("Saving code profile:", codeProfile);
+        localStorage.setItem("dialogueEditor.codeProfile", JSON.stringify(codeProfile));
     }, [codeProfile]);
 
     useEffect(() => {
@@ -1153,6 +1132,7 @@ export default function App() {
     function handleThemeChange(newTheme: "dark" | "light") {
         suppressDirtyRef.current = true;
         setTheme(newTheme);
+        localStorage.setItem("dialogueEditor.theme", newTheme);
         suppressDirtyRef.current = false;
     }
 
@@ -1783,11 +1763,26 @@ export default function App() {
                                     style={{ display: "none" }}
                                     accept=".txt" onChange={handleImport}
                                 />
+
+                                <button
+                                    onClick={async () => {
+                                        const ipc = getIpcRenderer();
+                                        if (!ipc) return;
+
+                                        const result = await ipc.invoke("editor:default-profile") as number;
+                                        if (result > 0) {
+                                            setCodeProfile(defaultProfile);
+                                        }
+                                    }}
+                                    className="secondary-button imp-exp-button"
+                                >
+                                    恢复默认配置
+                                </button>
                                 
                                 {/* 导入按钮 */}
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="imp-exp-button"
+                                    className="secondary-button imp-exp-button"
                                 >
                                     导入配置
                                 </button>
@@ -1795,7 +1790,7 @@ export default function App() {
                                 {/* 导出按钮 */}
                                 <button
                                     onClick={handleExport}
-                                    className="imp-exp-button"
+                                    className="secondary-button imp-exp-button"
                                 >
                                     导出配置
                                 </button>
@@ -1975,7 +1970,7 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
                 </div>
             </div>
             <textarea
-                rows={3}
+                rows={4}
                 className="custom-scroll"
                 style={{ width: "97%" }}
                 placeholder="在此输入关键字，并使用空格分隔不同的关键字。"
