@@ -512,8 +512,16 @@ export const defaultProfile: CodeStyleProfile = {
                 "ps_shape_diamond", "ps_shape_line", "ps_distr_linear", "ps_distr_gaussian", 
                 "ps_distr_invgaussian", "ps_force_constant", "ps_force_linear", 
                 "ps_force_quadratic", "ps_deflect_horizontal", "ps_deflect_vertical", 
-                "ps_change_motion", "ps_change_shape", "ps_change_all"
+                "ps_change_motion", "ps_change_shape", "ps_change_all", "true", "false", "pi"
             ]
+        }, {
+            id: "g4", name: "脚本名", type: "function",
+            colorLight: "#800080", colorDark: "#EF4DEF",
+            keywords: []
+        }, {
+            id: "g5", name: "资源名", type: "variable",
+            colorLight: "#808000", colorDark: "#E6E660",
+            keywords: []
         }
     ]
 };

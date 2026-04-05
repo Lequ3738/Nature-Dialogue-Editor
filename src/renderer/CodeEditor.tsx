@@ -1,10 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import {
+    Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate
+} from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
-import { autocompletion, completeAnyWord, type CompletionContext } from "@codemirror/autocomplete";
+import {
+    HighlightStyle, syntaxHighlighting, syntaxTree, indentUnit
+} from "@codemirror/language";
+import {
+    autocompletion, type CompletionContext
+} from "@codemirror/autocomplete";
 import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
+import { tags as t } from "@lezer/highlight";
 
 export type KeywordType = "function" | "variable" | "keyword" | "constant";
 
@@ -85,7 +92,7 @@ export default function CodeEditor(
                         // 核心：只拦截我们关心的词法节点类型
                         const isWordNode = 
                             node.name === "keyword" || 
-                            node.name === "variableName" || 
+                            node.name === "variable" || 
                             node.name === "constant" || 
                             node.name === "function";
                             
@@ -97,8 +104,10 @@ export default function CodeEditor(
                                 builder.add(
                                     node.from, node.to,
                                     Decoration.mark({
-                                        attributes: { style: `color: ${color} !important; ${
-                                            node.name === "keyword" ? "font-weight: bold;" : ""
+                                        attributes: { style: 
+                                            `color: ${color} !important; ${
+                                            node.name === "keyword" ? 
+                                            "font-weight: bold;" : ""
                                         }` }
                                     })
                                 );
@@ -113,76 +122,163 @@ export default function CodeEditor(
         decorations: v => v.decorations
     }) , [rulesMap]);
 
+    const createEditorHighlightStyle = (theme: "light" | "dark") => {
+        const isDark = theme === "dark";
+        
+        return HighlightStyle.define([
+            { tag: t.keyword, color: isDark ? "#569CD6" : "#000080", fontWeight: "bold" },
+            { tag: t.string, color: isDark ? "#92CAF4" : "#0000FF" },
+            { tag: t.number, color: isDark ? "#B8D7A3" : "#0000FF" },
+            { tag: t.comment, color: isDark ? "#57A64A" : "#008000" },
+            { tag: t.operator, color: isDark ? "#C8C8C8" : "#606060" },
+            { tag: t.brace, color: isDark ? "#569CD6" : "#000080", fontWeight: "bold" },
+        ]);
+    };
+
     // --- 3. 代码补全生成器 ---
     const customAutocomplete = useMemo(() => {
-        function gmlCompletions(context: CompletionContext) {
-            let word = context.matchBefore(/\w*/);
-            if (!word || (word.from === word.to && !context.explicit)) return null;
-    
-            const optionMap = new Map<string, any>();
-    
-            const putOption = (opt: any) => {
-                const label = String(opt.label ?? "").trim();
-                if (!label) return;
-                optionMap.set(label, opt);
-            };
-    
-            // 1. 默认关键字
-            gmlKeywordList.forEach(k => putOption({ label: k, type: "keyword" }));
-            gmlBuiltinList.forEach(k => putOption({ label: k, type: "constant" }));
-    
-            // 2. 用户自定义关键字
-            profile.keywordGroups.forEach(group => {
-                group.keywords.forEach(k => {
-                    const label = k.trim();
-                    if (label) {
-                        putOption({
-                            label,
-                            type: group.type,
-                            info: `[${group.name}]`
-                        });
+        return autocompletion({
+            override: [(context: CompletionContext) => {
+                // 在字符串/注释内部，不提供任何补全选项
+                const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
+                if (nodeBefore.name === "string" || nodeBefore.name === "blockComment" || 
+                    nodeBefore.name === "lineComment") {
+                    return null;
+                }
+
+                const word = context.matchBefore(/\w*/);
+                if (!word || (word.from === word.to && !context.explicit)) return null;
+
+                const options: any[] = [];
+                const addedLabels = new Set<string>(); // 用于去重记录
+
+                // 1. 添加内置关键字和常量
+                gmlKeywordList.forEach(k => {
+                    options.push({ label: k, type: "keyword", boost: 1 });
+                    addedLabels.add(k);
+                });
+                gmlBuiltinList.forEach(b => {
+                    options.push({ label: b, type: "constant" });
+                    addedLabels.add(b);
+                });
+
+                // 2. 添加用户自定义配置中的关键字
+                profile.keywordGroups.forEach(group => {
+                    group.keywords.forEach(key => {
+                        const trimmedKey = key.trim();
+                        if (trimmedKey) {
+                            options.push({
+                                label: trimmedKey,
+                                type: group.type || "variable",
+                                info: `[${group.name}]`,
+                                boost: 2
+                            });
+                            addedLabels.add(trimmedKey);
+                        }
+                    });
+                });
+
+                // 从当前文档的语法树中提取“上下文变量”
+                syntaxTree(context.state).iterate({
+                    enter: (node) => {
+                        // 只提取被判定为“变量名”的节点
+                        if (node.name === "variable") {
+                            if (node.from <= context.pos && node.to >= context.pos) {
+                                return;
+                            }
+
+                            const text = context.state.sliceDoc(node.from, node.to);
+                            // 过滤掉已经加到列表里的内置函数或自定义关键字
+                            if (!addedLabels.has(text)) {
+                                addedLabels.add(text);
+                                options.push({
+                                    label: text,
+                                    type: "variable",
+                                    info: "(自定义变量)",
+                                    boost: 0 // 优先级最低，排在关键字下面
+                                });
+                            }
+                        }
                     }
                 });
-            });
-    
-            return {
-                from: word.from,
-                options: Array.from(optionMap.values()),
-                validFor: /^\w*$/,
-            };
-        }
-    
-        return autocompletion({ override: [gmlCompletions, completeAnyWord] });
-    }, [profile]);
+
+                return {
+                    from: word.from,
+                    options: options,
+                    filter: true
+                };
+            }]
+        });
+    }, [profile.keywordGroups]);
 
     const themeExt = useMemo(() => EditorView.theme({
-        // 1. 编辑器根容器
+        // 编辑器根容器
         "&": {
             fontSize: `${profile.fontSize}px`,
             height: `${height}px`,
         },
-        // 2. 关键：滚动区域（决定了整个编辑框的背景色）
+        // 滚动区域（决定了整个编辑框的背景色）
         ".cm-scroller": {
             fontFamily: profile.fontFamily, // 响应字体设置
             backgroundColor: theme === "light" ? "#ffffff" : "#1E2024", // 响应背景色
         },
-        // 3. 关键：内容区域（决定了代码文字的字体和颜色）
+        // 内容区域（决定了代码文字的字体和颜色）
         ".cm-content": {
             fontFamily: profile.fontFamily,
             color: theme === "light" ? "#0f172a" : "#e5e7eb",
             caretColor: theme === "light" ? "#0f172a" : "#e5e7eb",
         },
-        // 4. 左侧行号区域
+        // 左侧行号区域
         ".cm-gutters": {
             fontFamily: profile.fontFamily,
             backgroundColor: theme === "light" ? "#f8fafc" : "rgba(255,255,255,0.04)",
             color: theme === "light" ? "#94a3b8" : "#6b7280",
             borderRight: "1px solid rgba(127, 127, 127, 0.25)",
         },
-        // 选中状态的背景色（可选，让深色模式更好看）
+        ".cm-gutterElement.cm-activeLineGutter": {
+            // 背景色：建议比整体侧栏颜色稍亮或稍暗一点点
+            backgroundColor: theme === "light" ? "#e2e8f0" : "rgba(255, 255, 255, 0.08)",
+            // 文字颜色：通常设置为更亮的颜色，突出当前行号
+            color: theme === "light" ? "#0f172a" : "#ffffff",
+        },
+        ".cm-activeLine": {
+            backgroundColor: (theme === "light" ? "#5F6B7A20" : "#5F6B7A30") + " !important",
+        },
+        // 选中状态的背景色
         ".cm-selectionBackground": {
-            backgroundColor: theme === "light" ? "#e2e8f0" : "#374151 !important",
-        }
+            backgroundColor: (theme === "light" ? "#ADD6FF" : "#264F78") + " !important",
+        },
+
+        ".cm-tooltip": {
+            backgroundColor: theme === "light" ? "#ffffff" : "#2d3139",
+            border: theme === "light" ? "1px solid #ddd" : "1px solid #181a1f",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            fontFamily: profile.fontFamily,
+            fontSize: `${profile.fontSize - 1}px`,
+        },
+
+        ".cm-tooltip-autocomplete": {
+            "& > ul": {
+                fontFamily: profile.fontFamily,
+            },
+            "& > ul > li": {
+                padding: "4px 8px",
+                borderRadius: "8px",
+                lineHeight: "1.5",
+            },
+            // 鼠标悬停或键盘选中的项
+            "& > ul > li[aria-selected]": {
+                backgroundColor: theme === "light" ? "#e2e8f0" : "#3e4451",
+                color: theme === "light" ? "#000" : "#fff",
+            }
+        },
+
+        ".cm-completionMatchedText": {
+            textDecoration: "none",
+            fontWeight: "bold",
+            color: theme === "light" ? "#2563eb" : "#61afef",
+        },
     }), [profile.fontFamily, profile.fontSize, theme, height]);
 
     const overrideWords = useMemo(() => {
@@ -201,8 +297,12 @@ export default function CodeEditor(
     const gml = useMemo(() => createGmlLanguage(overrideWords), [overrideWords]);
 
     const extensions = useMemo(
-        () => [gml, themeExt, highlightPlugin, customAutocomplete],
-        [gml, themeExt, highlightPlugin, customAutocomplete]
+        () => [
+            gml, themeExt, indentUnit.of("    "), 
+            syntaxHighlighting(createEditorHighlightStyle(theme)), 
+            highlightPlugin, customAutocomplete
+        ],
+        [gml, themeExt, highlightPlugin, customAutocomplete, theme]
     );
 
     return (
@@ -211,7 +311,7 @@ export default function CodeEditor(
                 key={extensionsKey}
                 value={value}
                 height={`${height}px`}
-                basicSetup={{ lineNumbers: true, foldGutter: false, dropCursor: false }}
+                basicSetup={{ lineNumbers: true, foldGutter: true, dropCursor: false }}
                 extensions={extensions}
                 onChange={onChange}
             />

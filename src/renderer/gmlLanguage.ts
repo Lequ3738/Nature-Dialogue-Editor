@@ -11,14 +11,12 @@ export const gmlKeywordList = [
 ];
 
 // 常量
-export const gmlBuiltinList = [
-    "true", "false", "pi"
-];
+export const gmlBuiltinList = [];
 
 const gmlKeywords = new RegExp(`^(${gmlKeywordList.join('|')})$`);
 const gmlBuiltins = new RegExp(`^(${gmlBuiltinList.join('|')})$`);
 
-const normalize = (s: string) => s.trim().toLowerCase();
+const normalize = (s: string) => s.trim();
 
 export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
     function tokenBase(stream: StringStream, state: any): string | null {
@@ -34,8 +32,13 @@ export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
             return tokenComment(stream, state);
         }
 
-        if (stream.match('"', false) || stream.match("'", false)) {
-            state.tokenize = tokenString(stream.peek()!);
+        if (stream.match(/^[{}]/)) {
+            return "brace"; 
+        }
+
+        const quote = stream.match(/^["']/);
+        if (quote) {
+            state.tokenize = tokenString((quote as RegExpMatchArray)[0]);
             return state.tokenize(stream, state);
         }
 
@@ -54,7 +57,7 @@ export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
 
             if (stream.peek() === "(") return "function";
 
-            return "variableName";
+            return "variable";
         }
 
         if (stream.match(/^[+\-*\/=<>!&|~^%:]+/)) return "operator";
@@ -104,12 +107,12 @@ export function createGmlLanguage(overrideWords: Set<string> = new Set()) {
             string: t.string,
             number: t.number,
             keyword: t.keyword,
-            bool: t.bool,
             operator: t.operator,
             function: t.function(t.variableName),
-            variableName: t.variableName,
+            variable: t.variableName,
             punctuation: t.punctuation,
             constant: t.constant(t.variableName),
+            brace: t.brace,
         },
     });
 }
