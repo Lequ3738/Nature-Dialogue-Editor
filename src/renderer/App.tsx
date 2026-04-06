@@ -135,7 +135,7 @@ export default function App() {
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
-    
+
     // ... 设置面板中的编辑状态 ...
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
 
@@ -176,7 +176,7 @@ export default function App() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${ draftProfile ? draftProfile.name : "新配置" }.txt`;
+        a.download = `${draftProfile ? draftProfile.name : "新配置"}.txt`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -190,7 +190,7 @@ export default function App() {
         reader.onload = (event) => {
             try {
                 const imported = JSON.parse(event.target?.result as string);
-                
+
                 // 基础校验：确保包含必要的 keywordGroups 字段
                 if (imported.keywordGroups) {
                     setCodeProfile(validateProfile(imported));
@@ -201,7 +201,7 @@ export default function App() {
                 alert("导入失败：文件格式不正确");
             }
             // 清空 input，保证可以连续导入同一个文件进行覆盖测试
-            e.target.value = ""; 
+            e.target.value = "";
         };
         reader.readAsText(file);
     };
@@ -234,6 +234,8 @@ export default function App() {
     const hasWorkspaceContent =
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
+
+    const [settingsTab, setSettingsTab] = useState<'info' | 'editor' | 'about'>('info');
 
     // 窗口缩放监听
     const [tick, setTick] = useState(0);
@@ -398,7 +400,7 @@ export default function App() {
                 const el = document.getElementById(`node-${n.id}`);
                 const w = el ? el.offsetWidth : 260;
                 const h = el ? el.offsetHeight : 120;
-                
+
                 minX = Math.min(minX, n.x);
                 minY = Math.min(minY, n.y);
                 maxX = Math.max(maxX, n.x + w);
@@ -542,16 +544,16 @@ export default function App() {
 
             // 距离用于动态决定曲线的弯曲强度
             const dist = Math.hypot(end.x - start.x, end.y - start.y);
-            
+
             // 商业软件的精髓：设置最小弯曲强度，即便节点挨得很近，线也是圆润的而不会变成死板的直线
-            const minCurve = 60 * zoom; 
+            const minCurve = 60 * zoom;
             const maxCurve = 250 * zoom;
             const curveStrength = Math.min(maxCurve, Math.max(minCurve, dist * 0.4));
 
             // 基于法线方向 (nx, ny) 延伸控制点，告别之前的 horizontal 乱跳问题
             const cp1X = start.x + startW.nx * curveStrength;
             const cp1Y = start.y + startW.ny * curveStrength;
-            
+
             const cp2X = end.x + endW.nx * curveStrength;
             const cp2Y = end.y + endW.ny * curveStrength;
 
@@ -574,7 +576,7 @@ export default function App() {
             const tanX = end.x - cp2X;
             const tanY = end.y - cp2Y;
             const angle = Math.atan2(tanY, tanX);
-            
+
             drawArrowHead(ctx, end.x, end.y, angle, 18 * zoom);
         });
     }, [state.edges, state.nodes, state.view, windowSize, tick]);
@@ -733,10 +735,10 @@ export default function App() {
             const dx = endMini.x - startMini.x;
             const dy = endMini.y - startMini.y;
             const dist = Math.hypot(dx, dy);
-            
+
             // 缩略图尺度较小，我们将 min/max 强度调小 (对应主画布的 60-250)
             // 使用刚才主画布同样的比例逻辑，但映射到缩略图的尺度
-            const minCurve = 15; 
+            const minCurve = 15;
             const maxCurve = 60;
             const curveStrength = Math.min(maxCurve, Math.max(minCurve, dist * 0.4));
 
@@ -762,10 +764,10 @@ export default function App() {
             const tanX = endMini.x - cp2X;
             const tanY = endMini.y - cp2Y;
             const angle = Math.atan2(tanY, tanX);
-            
+
             // 缩略图箭头尺寸建议略小一点，避免遮挡
-            const arrowSize = Math.max(5, 10 * scale); 
-            
+            const arrowSize = Math.max(5, 10 * scale);
+
             ctx.beginPath();
             ctx.moveTo(endMini.x, endMini.y);
             // 左翼
@@ -860,10 +862,10 @@ export default function App() {
                         comments: next.comments.map((c) =>
                             c.id === prev.resizing!.id
                                 ? {
-                                      ...c,
-                                      w: prev.resizing!.startW + deltaW,
-                                      h: prev.resizing!.startH + deltaH,
-                                  }
+                                    ...c,
+                                    w: prev.resizing!.startW + deltaW,
+                                    h: prev.resizing!.startH + deltaH,
+                                }
                                 : c
                         ),
                     };
@@ -1054,7 +1056,7 @@ export default function App() {
 
     const handleOpenClick = async () => {
         setFileMenuOpen(false);
-        
+
         // 如果当前已修改，先提示保存
         if (isDirty) {
             const res = confirm("当前文件尚未保存，是否先保存更改？");
@@ -1113,7 +1115,7 @@ export default function App() {
 
         const defaultName = ensureGmlName(currentFileName);
         const filePath = await ipc.invoke("dialog:save", defaultName);
-        
+
         if (!filePath) return false;
 
         const result = await ipc.invoke("editor:save-file", filePath, makeGml(state));
@@ -1164,7 +1166,7 @@ export default function App() {
             <div id="toolbar">
                 <button
                     onClick={() => {
-                        setState((prev) => 
+                        setState((prev) =>
                             addObject(prev, "node", windowSize.w, windowSize.h)
                         );
                     }}
@@ -1177,8 +1179,8 @@ export default function App() {
                             addObject(prev, "condition", windowSize.w, windowSize.h)
                         );
                     }}
-                    style={ theme === "dark" ? 
-                        { background: "#bf6b21" } : 
+                    style={theme === "dark" ?
+                        { background: "#bf6b21" } :
                         { background: "#e67e22" }
                     }
                 >
@@ -1186,16 +1188,42 @@ export default function App() {
                 </button>
                 <button
                     onClick={() => {
-                        setState((prev) => 
+                        setState((prev) =>
                             addObject(prev, "comment", windowSize.w, windowSize.h)
                         );
                     }}
-                    style={ theme === "dark" ? 
-                        { background: "#288856" } : 
+                    style={theme === "dark" ?
+                        { background: "#288856" } :
                         { background: "#3baa71" }
                     }
                 >
                     + 注释
+                </button>
+                <button
+                    onClick={() => {
+                        setState((prev) =>
+                            addObject(prev, "start", windowSize.w, windowSize.h)
+                        );
+                    }}
+                    style={theme === "dark" ?
+                        { background: "#ae3fb6" } :
+                        { background: "#da57e3" }
+                    }
+                >
+                    + 开始
+                </button>
+                <button
+                    onClick={() => {
+                        setState((prev) =>
+                            addObject(prev, "end", windowSize.w, windowSize.h)
+                        );
+                    }}
+                    style={theme === "dark" ?
+                        { background: "#828f90" } :
+                        { background: "#96a4a5" }
+                    }
+                >
+                    + 结束
                 </button>
                 <div style={{ flexGrow: 1 }} />
                 <div className={`file-menu ${fileMenuOpen ? "open" : ""}`} ref={fileMenuRef}>
@@ -1214,14 +1242,14 @@ export default function App() {
                         >
                             📖 打开
                         </button>
-                        <button 
-                            disabled={isNewEmpty} 
+                        <button
+                            disabled={isNewEmpty}
                             onClick={handleSave}
                         >
                             💾 保存
                         </button>
-                        <button 
-                            disabled={isNewEmpty} 
+                        <button
+                            disabled={isNewEmpty}
                             onClick={handleSaveAs}
                         >
                             💿 另存为
@@ -1255,13 +1283,13 @@ export default function App() {
             </div>
 
             <div id="viewport" ref={viewportRef}>
-                <canvas 
-                    id="line-canvas" 
-                    ref={lineCanvasRef} 
+                <canvas
+                    id="line-canvas"
+                    ref={lineCanvasRef}
                     style={{
-                        position: 'absolute', top: 0, left: 0, pointerEvents: 'none', 
+                        position: 'absolute', top: 0, left: 0, pointerEvents: 'none',
                         zIndex: 0, width: "100%", height: "100%",
-                    }} 
+                    }}
                 />
                 <div id="content-layer" style={{ ...viewportTransformStyle, zIndex: 1 }}>
                     <div id="objects-container">
@@ -1309,12 +1337,13 @@ export default function App() {
 
                         {state.nodes.map((n) => {
                             const isCond = n.type === "condition";
+                            const isStart = n.type === "start";
                             const isConnecting = connectingFromId === n.id;
                             return (
                                 <div
                                     key={n.id}
                                     id={`node-${n.id}`}
-                                    className="node"
+                                    className={`node ${isStart ? "start-node" : ""}`}
                                     style={{
                                         left: n.x,
                                         top: n.y,
@@ -1323,7 +1352,7 @@ export default function App() {
                                     }}
                                 >
                                     <div
-                                        className="node-header"
+                                        className={`node-header ${isStart ? "start-node-header" : ""}`}
                                         onMouseDown={(e) =>
                                             beginDrag(e, {
                                                 kind: "node",
@@ -1333,129 +1362,172 @@ export default function App() {
                                             })
                                         }
                                     >
-                                        <span>
-                                            {isCond ? `条件 #${n.id}` : `对话 #${n.id}`}
+                                        <span style={{ textAlign: "center" }}> {
+                                            isStart ?
+                                                "开始" :
+                                                (isCond ? "条件" : (n.type === "end" ? "结束" : "对话"))
+                                        }
                                         </span>
-                                        <span
-                                            style={{ cursor: "pointer" }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                openModal(n.id);
-                                            }}
-                                        >
-                                            ⚙️
-                                        </span>
-                                    </div>
-
-                                    <div className="node-body">
                                         {
-                                            isCond ? (
-                                                n.code ? n.code : 
-                                                <><span style={{color: "#888"}}>请添加有效的表达式。</span></>
-                                            ) : (
-                                                <>
-                                                    <span style={{color: "#888"}}>中文：</span> {
-                                                        n.cn ? n.cn :
-                                                        <><span style={{color: "#888"}}>无内容。</span></>
-                                                    }
-                                                    <hr style={{ opacity: 0.2 }} />
-                                                    <span style={{color: "#888"}}>英文：</span> {
-                                                        n.en ? n.en :
-                                                        <><span style={{color: "#888"}}>无内容。</span></>
-                                                    }
-                                                </>
-                                            )
+                                            !isStart ?
+                                                (
+                                                    <span
+                                                        style={{ cursor: "pointer" }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            openModal(n.id);
+                                                        }}
+                                                    >
+                                                        ⚙️
+                                                    </span>
+                                                ) : null
                                         }
                                     </div>
 
-                                    <div className="node-footer">
+                                    {
+                                        !isStart ?
+                                            (
+                                                <div className="node-body">
+                                                    {
+                                                        isCond ? (
+                                                            n.code ? n.code :
+                                                                <><span style={{ color: "#888" }}>请添加有效的表达式。</span></>
+                                                        ) : (
+                                                            n.type === "end" ? (
+                                                                n.code ? n.code :
+                                                                    <><span style={{ color: "#888" }}>请添加有效的代码语句。</span></>
+                                                            ) :
+                                                                <>
+                                                                    <span style={{ color: "#888" }}>中文：</span> {
+                                                                        n.cn ? n.cn :
+                                                                            <><span style={{ color: "#888" }}>无内容。</span></>
+                                                                    }
+                                                                    <hr style={{ opacity: 0.2 }} />
+                                                                    <span style={{ color: "#888" }}>英文：</span> {
+                                                                        n.en ? n.en :
+                                                                            <><span style={{ color: "#888" }}>无内容。</span></>
+                                                                    }
+                                                                </>
+                                                        )
+                                                    }
+                                                </div>
+                                            ) : null
+                                    }
+
+                                    <div className={`node-footer ${isStart ? "start-node-footer" : ""}`}>
                                         {
                                             isCond ? (
-                                            <>
-                                                <button
-                                                    className={`port 
-                                                        ${hasEdge(state, n.id, "true") ? "connected" : ""}
-                                                    `}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setState((prev) =>
-                                                            startConnect(prev, n.id, "true")
-                                                        );
-                                                    }}
-                                                    onContextMenu={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setState((prev) => ({
-                                                            ...prev,
-                                                            edges: prev.edges.filter(
-                                                                (ed) =>
-                                                                    !(
-                                                                        ed.fromId === n.id &&
-                                                                        ed.type === "true"
-                                                                    )
-                                                            ),
-                                                        }));
-                                                    }}
-                                                    title="右键删除 TRUE 连线"
-                                                >
-                                                    TRUE
-                                                </button>
-                                                <button
-                                                    className={
-                                                        `port ${hasEdge(state, n.id, "false") ? "connected" : ""}
-                                                        FALSE
-                                                    `}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setState((prev) =>
-                                                            startConnect(prev, n.id, "false")
-                                                        );
-                                                    }}
-                                                    onContextMenu={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        setState((prev) => ({
-                                                            ...prev,
-                                                            edges: prev.edges.filter(
-                                                                (ed) =>
-                                                                    !(
-                                                                        ed.fromId === n.id &&
-                                                                        ed.type === "false"
-                                                                    )
-                                                            ),
-                                                        }));
-                                                    }}
-                                                    title="右键删除 FALSE 连线"
-                                                >
+                                                <>
+                                                    <button
+                                                        className={`port 
+                                                    ${hasEdge(state, n.id, "true") ? "connected" : ""}
+                                                `}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setState((prev) =>
+                                                                startConnect(prev, n.id, "true")
+                                                            );
+                                                        }}
+                                                        onContextMenu={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setState((prev) => ({
+                                                                ...prev,
+                                                                edges: prev.edges.filter(
+                                                                    (ed) =>
+                                                                        !(
+                                                                            ed.fromId === n.id &&
+                                                                            ed.type === "true"
+                                                                        )
+                                                                ),
+                                                            }));
+                                                        }}
+                                                        title="右键删除 TRUE 连线"
+                                                    >
+                                                        TRUE
+                                                    </button>
+                                                    <button
+                                                        className={
+                                                            `port ${hasEdge(state, n.id, "false") ? "connected" : ""}
                                                     FALSE
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    className={`port ${hasEdge(state, n.id, "default") ? "connected" : ""}`}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setState((prev) =>
-                                                            startConnect(prev, n.id, "default")
-                                                        );
-                                                    }}
-                                                    onContextMenu={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        // 普通节点允许多条连线：弹出菜单让用户自由选择删哪条
-                                                        setEdgeMenu({
-                                                            fromId: n.id,
-                                                            x: e.clientX,
-                                                            y: e.clientY,
-                                                        });
-                                                    }}
-                                                    title="右键删除 NEXT 连线"
-                                                >
-                                                    NEXT →
-                                                </button>
-                                            </>
-                                        )}
+                                                `}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setState((prev) =>
+                                                                startConnect(prev, n.id, "false")
+                                                            );
+                                                        }}
+                                                        onContextMenu={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setState((prev) => ({
+                                                                ...prev,
+                                                                edges: prev.edges.filter(
+                                                                    (ed) =>
+                                                                        !(
+                                                                            ed.fromId === n.id &&
+                                                                            ed.type === "false"
+                                                                        )
+                                                                ),
+                                                            }));
+                                                        }}
+                                                        title="右键删除 FALSE 连线"
+                                                    >
+                                                        FALSE
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        className={`port ${hasEdge(state, n.id, "default") ? "connected" : ""}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setState((prev) =>
+                                                                startConnect(prev, n.id, "default")
+                                                            );
+                                                        }}
+                                                        onContextMenu={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            if (n.type === "start") {
+                                                                setState((prev) => ({
+                                                                    ...prev,
+                                                                    edges: prev.edges.filter(
+                                                                        (ed) =>
+                                                                            !(
+                                                                                ed.fromId === n.id &&
+                                                                                ed.type === "default"
+                                                                            )
+                                                                    ),
+                                                                }));
+                                                            } else {
+                                                                // 普通节点允许多条连线：弹出菜单让用户自由选择删哪条
+                                                                setEdgeMenu({
+                                                                    fromId: n.id,
+                                                                    x: e.clientX,
+                                                                    y: e.clientY,
+                                                                });
+                                                            }
+                                                        }}
+                                                        title={n.type === "end" ? "" : "右键删除 NEXT 连线"}
+                                                    >
+                                                        {n.type === "end" ? "结束" : "NEXT →"}
+                                                    </button>
+                                                    {
+                                                        isStart ? (
+                                                            <span
+                                                                style={{ cursor: "pointer" }}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openModal(n.id);
+                                                                }}
+                                                            >
+                                                                ⚙️
+                                                            </span>
+                                                        ) : null
+                                                    }
+                                                </>
+                                            )}
                                     </div>
                                 </div>
                             );
@@ -1671,7 +1743,8 @@ export default function App() {
                             节点配置
                         </h3>
 
-                        {editingNode?.type !== "condition" ? (
+                        {(editingNode?.type !== "condition" && editingNode?.type !== "end" &&
+                            editingNode?.type !== "start") ? (
                             <div className="lang-box">
                                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                                     <label style={{ fontSize: 12, color: "#888" }}>中文</label>
@@ -1700,16 +1773,20 @@ export default function App() {
                             </div>
                         ) : null}
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                            <label style={{ fontSize: 12, color: "#888" }}>执行代码</label>
-                            <CodeEditor
-                                value={draft.code}
-                                onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
-                                profile={codeProfile}
-                                theme={theme}
-                                height={180}
-                            />
-                        </div>
+                        {editingNode?.type !== "start" ?
+                            <>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                    <label style={{ fontSize: 12, color: "#888" }}>执行代码</label>
+                                    <CodeEditor
+                                        value={draft.code}
+                                        onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
+                                        profile={codeProfile}
+                                        theme={theme}
+                                        height={180}
+                                    />
+                                </div>
+                            </> : null
+                        }
 
                         <div className="color-row">
                             <label>自定义颜色:</label>
@@ -1748,149 +1825,420 @@ export default function App() {
 
             {settingsOpen && draftProfile ? (
                 <div id="config-back">
-                    <div id="config-overlay">
-                        <div id="config"
-                            style={{ 
-                                borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD"
-                        }}>
-                            <h3 style={{ margin: 0 }}>代码编辑器设置</h3>
-                            
-                            {/* 右对齐的按钮容器 */}
-                            <div style={{ display: "flex", gap: 10 }}>
-                                {/* 隐藏的真实输入框 */}
-                                <input
-                                    type="file" ref={fileInputRef}
-                                    style={{ display: "none" }}
-                                    accept=".txt" onChange={handleImport}
-                                />
-
+                    <div
+                        id="config-overlay"
+                        style={{
+                            display: "flex",
+                            flexDirection: "row",
+                            width: "850px",
+                            height: "600px",
+                            padding: 0,
+                            overflow: "hidden",
+                            borderRadius: "8px"
+                        }}
+                    >
+                        {/* --- 左侧垂直标签栏 --- */}
+                        <div className="settings-sidebar">
+                            <div className="settings-sidebar-top">
+                                <div className="settings-sidebar-title">项目设置</div>
                                 <button
-                                    onClick={async () => {
-                                        const ipc = getIpcRenderer();
-                                        if (!ipc) return;
+                                    className={`settings-tab ${settingsTab === 'info' ? 'active' : ''}`}
+                                    onClick={() => setSettingsTab('info')}
+                                >
+                                    项目信息
+                                </button>
+                                <button
+                                    className={`settings-tab ${settingsTab === 'editor' ? 'active' : ''}`}
+                                    onClick={() => setSettingsTab('editor')}
+                                >
+                                    代码编辑器
+                                </button>
+                                <button
+                                    className={`settings-tab ${settingsTab === 'about' ? 'active' : ''}`}
+                                    onClick={() => setSettingsTab('about')}
+                                >
+                                    关于
+                                </button>
+                            </div>
 
-                                        const result = await ipc.invoke("editor:default-profile") as number;
-                                        if (result > 0) {
-                                            setCodeProfile(defaultProfile);
-                                        }
+                            {/* 左下角：保存与取消按钮 */}
+                            <div style={{
+                                display: "flex", gap: 10, padding: "12px 16px", 
+                                borderTop: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`
+                            }}>
+                                <button
+                                    onClick={() => setSettingsOpen(false)}
+                                    className="secondary-button"
+                                    style={{ flex: 1 }}
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setCodeProfile(draftProfile);
+                                        setSettingsOpen(false);
                                     }}
-                                    className="secondary-button imp-exp-button"
+                                    style={{ flex: 1 }}
                                 >
-                                    恢复默认配置
-                                </button>
-                                
-                                {/* 导入按钮 */}
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="secondary-button imp-exp-button"
-                                >
-                                    导入配置
-                                </button>
-
-                                {/* 导出按钮 */}
-                                <button
-                                    onClick={handleExport}
-                                    className="secondary-button imp-exp-button"
-                                >
-                                    导出配置
+                                    保存
                                 </button>
                             </div>
                         </div>
-                        
-                        {/* 字体设置 */}
-                        <div style={{
-                            display: "flex",
-                            borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
-                            paddingBottom: 15
-                        }}>
-                            <label
-                                style={{ display: "block", marginBottom: 2, paddingTop: 3 }}
-                            >
-                                字体系列：
-                            </label>
-                            <input 
-                                className="textarea-styled"
-                                style={{ width: "55%", padding: 8 }}
-                                value={draftProfile.fontFamily} 
-                                onChange={e => setDraftProfile({...draftProfile, fontFamily: e.target.value})}
-                            />
-                            <label
-                                style={{ display: "block", marginBottom: 2, marginLeft: 40, paddingTop: 3 }}
-                            >
-                                大小：
-                            </label>
-                            <input 
-                                type="number"
-                                className="textarea-styled"
-                                style={{ width: "10%", padding: 8 }}
-                                value={draftProfile.fontSize} 
-                                onChange={e => setDraftProfile({...draftProfile, fontSize: Number(e.target.value)})}
-                            />
-                        </div>
 
-                        {/* 关键字分类设置 */}
-                        <h4 style={{ margin: 0 }}>自定义高亮</h4>
+                        {/* 右侧内容区域 */}
+                        <div className="settings-content custom-scroll">
+                            {/* 1. 项目信息标签 */}
+                            {settingsTab === 'info' && (
+                                <div className="settings-section">
+                                    <h3>项目信息</h3>
 
-                        <div style={{
-                            borderRadius: 8, maxHeight: "40vh", overflowY: "auto",
-                            display: "flex", flexDirection: "column", gap: 16, color: "var(--text)"
-                        }} className="custom-scroll">
-                            {draftProfile.keywordGroups?.map((group, index) => (
-                                <GroupEditor 
-                                    key={group.id} 
-                                    group={group}
-                                    theme={theme}
-                                    onChange={(updatedGroup) => {
-                                        const newGroups = [...draftProfile.keywordGroups];
-                                        newGroups[index] = updatedGroup;
-                                        setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
-                                    }}
-                                    onDelete={() => {
-                                        const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
-                                        setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
-                                    }}
-                                />
-                            ))}
-                        </div>
-                        
-                        <button
-                            onClick={() => {
-                                const newGroups = [
-                                    ...draftProfile.keywordGroups, 
-                                    {
-                                        id: Date.now().toString(),
-                                        name: "新分组", type: "function" as KeywordType,
-                                        colorDark: "#ffffff", colorLight: "#000000",
-                                        keywords: []
-                                    }
-                                ];
+                                    <div className="form-group-row">
+                                        <label style={{ paddingTop: 8 }}>项目标题：</label>
+                                        <input
+                                            type="text"
+                                            className="textarea-styled"
+                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
+                                            placeholder="输入项目名称"
+                                            value={state.title}
+                                            onChange={e => setState(prev => ({ ...prev, title: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group-row">
+                                        <label style={{ paddingTop: 8 }}>作者：</label>
+                                        <input
+                                            type="text"
+                                            className="textarea-styled"
+                                            placeholder="输入作者名称"
+                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
+                                            value={state.author}
+                                            onChange={e => setState(prev => ({ ...prev, author: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group-row">
+                                        <label style={{ paddingTop: 8 }}>版本号：</label>
+                                        <input
+                                            type="text"
+                                            className="textarea-styled"
+                                            placeholder="输入版本号（如 1.0.0）"
+                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
+                                            value={state.version}
+                                            onChange={e => setState(prev => ({ ...prev, version: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group-row">
+                                        <label style={{ paddingTop: 8 }}>描述：</label>
+                                        <input
+                                            type="text"
+                                            className="textarea-styled"
+                                            placeholder="输入项目的描述文本"
+                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
+                                            value={state.description}
+                                            onChange={e => setState(prev => ({ ...prev, description: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>对话禁用表达式：</label>
+                                        <CodeEditor
+                                            value={state.forbiddenExpression}
+                                            onChange={next => setState(prev => ({ ...prev, forbiddenExpression: next }))}
+                                            profile={codeProfile}
+                                            theme={theme}
+                                            height={180}
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
-                                setDraftProfile({...draftProfile, keywordGroups: newGroups});
-                            }}
-                        >
-                            + 添加关键字分组
-                        </button>
+                            {/* 2. 代码编辑器设置标签 */}
+                            {settingsTab === 'editor' && (
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    height: '100%', // 强制占满右侧设置区的全部高度
+                                    gap: "13px",
+                                }}>
+                                    {/* 头部标题+操作按钮 固定不滚动 */}
+                                    <div id="config"
+                                        style={{
+                                            borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
+                                            flexShrink: 0, // 禁止压缩
+                                            marginTop: 2 
+                                        }}>
+                                        <h3 style={{ margin: 0, marginTop: 6  }}>代码编辑器</h3>
+                                        {/* 右对齐的按钮容器 */}
+                                        <div style={{ display: "flex", gap: 10, marginTop: 0 }}>
+                                            {/* 隐藏的真实输入框 */}
+                                            <input
+                                                type="file" ref={fileInputRef}
+                                                style={{ display: "none" }}
+                                                accept=".txt" onChange={handleImport}
+                                            />
+                                            <button
+                                                onClick={async () => {
+                                                    const ipc = getIpcRenderer();
+                                                    if (!ipc) return;
+                                                    const result = await ipc.invoke("editor:default-profile") as number;
+                                                    if (result > 0) {
+                                                        setCodeProfile(defaultProfile);
+                                                    }
+                                                }}
+                                                className="secondary-button imp-exp-button"
+                                            >
+                                                恢复默认配置
+                                            </button>
+                                            {/* 导入按钮 */}
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="secondary-button imp-exp-button"
+                                            >
+                                                导入配置
+                                            </button>
+                                            {/* 导出按钮 */}
+                                            <button
+                                                onClick={handleExport}
+                                                className="secondary-button imp-exp-button"
+                                            >
+                                                导出配置
+                                            </button>
+                                        </div>
+                                    </div>
 
-                        {/* 保存/取消操作 */}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-                            <button
-                                onClick={() => setSettingsOpen(false)}
-                                className="secondary-button"
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setCodeProfile(draftProfile);
-                                    setSettingsOpen(false);
-                                }}
-                            >
-                                保存
-                            </button>
+                                    {/* 字体设置 固定不滚动 */}
+                                    <div style={{
+                                        display: "flex",
+                                        alignItems: 'center',
+                                        borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
+                                        paddingBottom: 15,
+                                        flexShrink: 0, // 禁止压缩
+                                        gap: 12
+                                    }}>
+                                        <label
+                                            style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
+                                        >
+                                            字体系列：
+                                        </label>
+                                        <input
+                                            className="textarea-styled"
+                                            style={{ flex: 1, padding: 8 }}
+                                            value={draftProfile.fontFamily}
+                                            onChange={e => setDraftProfile({ ...draftProfile, fontFamily: e.target.value })}
+                                        />
+                                        <label
+                                            style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
+                                        >
+                                            大小：
+                                        </label>
+                                        <input
+                                            type="number"
+                                            className="textarea-styled"
+                                            style={{ width: 80, padding: 8 }}
+                                            value={draftProfile.fontSize}
+                                            onChange={e => setDraftProfile({ ...draftProfile, fontSize: Number(e.target.value) })}
+                                        />
+                                    </div>
+
+                                    {/* 关键字分组标题 固定不滚动 */}
+                                    <h4 style={{ margin: 0, flexShrink: 0 }}>自定义高亮</h4>
+
+                                    {/* 分组列表 自适应占满剩余空间，仅此处滚动 */}
+                                    <div style={{
+                                        borderRadius: 8,
+                                        flex: 1, // 核心：自动占满剩余高度
+                                        overflowY: "auto",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 16,
+                                        color: "var(--text)"
+                                    }} className="custom-scroll">
+                                        {draftProfile.keywordGroups?.map((group, index) => (
+                                            <GroupEditor
+                                                key={group.id}
+                                                group={group}
+                                                theme={theme}
+                                                onChange={(updatedGroup) => {
+                                                    const newGroups = [...draftProfile.keywordGroups];
+                                                    newGroups[index] = updatedGroup;
+                                                    setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
+                                                }}
+                                                onDelete={() => {
+                                                    const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
+                                                    setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+
+                                    {/* 添加按钮 固定在底部，永远不随内容滚动、不随窗口大小偏移 */}
+                                    <button
+                                        onClick={() => {
+                                            const newGroups = [
+                                                ...draftProfile.keywordGroups,
+                                                {
+                                                    id: Date.now().toString(),
+                                                    name: "新分组", type: "function" as KeywordType,
+                                                    colorDark: "#ffffff", colorLight: "#000000",
+                                                    keywords: []
+                                                }
+                                            ];
+                                            setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
+                                        }}
+                                        style={{ flexShrink: 0, marginTop: 8 }}
+                                    >
+                                        + 添加关键字分组
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* 3. 关于标签 */}
+                            {settingsTab === 'about' && (
+                                <div className="settings-section">
+                                    <h3>关于</h3>
+                                    <div className="settings-section" style={{ 
+                                        display: 'flex', 
+                                        flexDirection: 'column', 
+                                        alignItems: 'center', 
+                                        textAlign: 'center',
+                                        justifyContent: 'center', // 垂直居中
+                                        padding: '20px 0'
+                                    }}>
+                                        {/* 1. 软件大标题 */}
+                                        <h2 style={{ 
+                                            margin: 0, 
+                                            fontSize: '28px', 
+                                            fontWeight: 800,
+                                            background: theme === 'dark' 
+                                                ? 'linear-gradient(135deg, #fff 0%, #aaa 100%)' 
+                                                : 'linear-gradient(135deg, #1f2937 0%, #4b5563 100%)',
+                                            WebkitBackgroundClip: 'text',
+                                            WebkitTextFillColor: 'transparent',
+                                            backgroundClip: 'text'
+                                        }}>
+                                            对话编辑器
+                                        </h2>
+                                        
+                                        {/* 2. 版本号 */}
+                                        <p style={{ 
+                                            margin: '8px 0 24px 0', 
+                                            fontSize: '14px', 
+                                            opacity: 0.6,
+                                            letterSpacing: '1px'
+                                        }}>
+                                            版本 1.0.0
+                                        </p>
+
+                                        {/* 3. 分割线 */}
+                                        <div style={{ 
+                                            width: '40px', 
+                                            height: '3px', 
+                                            background: 'var(--accent)', 
+                                            borderRadius: '999px',
+                                            marginBottom: '24px'
+                                        }} />
+
+                                        {/* 4. 作者与描述 */}
+                                        <div style={{ maxWidth: '420px', marginBottom: '32px' }}>
+                                            <p style={{ margin: '0 0 12px 0', fontWeight: 600, fontSize: '15px' }}>
+                                                作者：Lequ
+                                            </p>
+                                            <p style={{ 
+                                                margin: 0, 
+                                                fontSize: '14px', 
+                                                lineHeight: '1.7', 
+                                                opacity: 0.85
+                                            }}>
+                                                本程序专为游戏 <span style={{ fontWeight: 600, opacity: 1 }}>I want Nature</span> 设计，
+                                                用于通过有向图可视化编辑对话走向，并编译导出对应的 GML 代码逻辑。
+                                            </p>
+                                        </div>
+
+                                        {/* 5. 技术栈标题 */}
+                                        <p style={{ 
+                                            margin: '0 0 16px 0', 
+                                            fontSize: '12px', 
+                                            textTransform: 'uppercase', 
+                                            letterSpacing: '2px',
+                                            opacity: 0.5
+                                        }}>
+                                            Powered by
+                                        </p>
+
+                                        {/* 6. 技术栈图标墙 (横向排列) */}
+                                        <div style={{ 
+                                            display: 'flex', 
+                                            justifyContent: 'center', 
+                                            alignItems: 'flex-start',
+                                            gap: '32px', // 图标之间的间距
+                                            flexWrap: 'wrap'
+                                        }}>
+                                            {/* Electron */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ 
+                                                    width: '56px', 
+                                                    height: '56px', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center',
+                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                                    borderRadius: '12px',
+                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
+                                                }}>
+                                                    <img 
+                                                        src="src/resources/electron.svg" 
+                                                        alt="Electron" 
+                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>Electron</span>
+                                            </div>
+
+                                            {/* React */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ 
+                                                    width: '56px', 
+                                                    height: '56px', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center',
+                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                                    borderRadius: '12px',
+                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
+                                                }}>
+                                                    <img 
+                                                        src={`src/resources/react_${theme === "light" ? "light" : "dark" }.svg`} 
+                                                        alt="React" 
+                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>React</span>
+                                            </div>
+
+                                            {/* Vite */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ 
+                                                    width: '56px', 
+                                                    height: '56px', 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'center',
+                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                                    borderRadius: '12px',
+                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
+                                                }}>
+                                                    <img 
+                                                        src={`src/resources/vite_${theme === "light" ? "light" : "dark" }.svg`} 
+                                                        alt="Vite" 
+                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
+                                                    />
+                                                </div>
+                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>Vite</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                )}
                         </div>
                     </div>
-                </div>
-            ) : null}
+                </div>) : null}
         </>
     );
 }
@@ -1898,7 +2246,7 @@ export default function App() {
 // 设置面板内部组件，用于处理单个分组，解决空格 Bug
 function GroupEditor({ group, theme, onChange, onDelete }: {
     group: KeywordGroup;
-    theme: "dark" | "light"; 
+    theme: "dark" | "light";
     onChange: (g: KeywordGroup) => void;
     onDelete: () => void;
 }) {
@@ -1908,9 +2256,9 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
     useEffect(() => {
         // 比较当前输入框的单词，和外部 (group.keywords) 的单词是否一致
         const currentArr = rawKeywords.split(/\s+/).filter(Boolean);
-        const isSame = currentArr.length === group.keywords.length && 
-                       currentArr.every((k, i) => k === group.keywords[i]);
-        
+        const isSame = currentArr.length === group.keywords.length &&
+            currentArr.every((k, i) => k === group.keywords[i]);
+
         // 只有当真正不一致时（即触发了导入配置），才强制覆盖文本框内容
         // 这样既能实现导入后自动刷新，又不会在正常打字时吃掉结尾的空格
         if (!isSame) {
@@ -1920,9 +2268,9 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
 
     const handleTextChange = (val: string) => {
         setRawKeywords(val); // 保持输入框原始状态，允许尾随空格
-        
+
         // 过滤出干净的单词数组存入配置，防止出现空字符串高亮报错
-        const keywordsArray = val.split(/\s+/).filter(Boolean); 
+        const keywordsArray = val.split(/\s+/).filter(Boolean);
         onChange({ ...group, keywords: keywordsArray });
     };
 
@@ -1941,14 +2289,14 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
                     <option value="keyword">关键字</option>
                     <option value="constant">常量</option>
                 </select>
-                <input 
+                <input
                     placeholder="分组名称"
                     className="textarea-styled"
-                    style={{ flex: 1, padding: 8 }}
-                    value={group.name} 
-                    onChange={e => onChange({ ...group, name: e.target.value })} 
+                    style={{ flex: 1, padding: 8, width: "50%" }}
+                    value={group.name}
+                    onChange={e => onChange({ ...group, name: e.target.value })}
                 />
-                <button 
+                <button
                     style={{ background: "#ed4245" }}
                     onClick={onDelete}
                 >
@@ -1963,8 +2311,8 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
                 </div>
                 <div style={{ display: "flex", alignItems: "center" }}>
                     <label>深色：</label>
-                    <input type="color" 
-                        value={group.colorDark} 
+                    <input type="color"
+                        value={group.colorDark}
                         onChange={e => onChange({ ...group, colorDark: e.target.value })}
                     />
                 </div>

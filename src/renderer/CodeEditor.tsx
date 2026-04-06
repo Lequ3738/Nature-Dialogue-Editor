@@ -242,7 +242,7 @@ export default function CodeEditor(
             color: theme === "light" ? "#0f172a" : "#ffffff",
         },
         ".cm-activeLine": {
-            backgroundColor: (theme === "light" ? "#5F6B7A20" : "#5F6B7A30") + " !important",
+            backgroundColor: (theme === "light" ? "#3D597A20" : "#3D597A30") + " !important",
         },
         // 选中状态的背景色
         ".cm-selectionBackground": {
@@ -279,6 +279,10 @@ export default function CodeEditor(
             fontWeight: "bold",
             color: theme === "light" ? "#2563eb" : "#61afef",
         },
+
+        ".cm-cursor": {
+            borderLeft: "2px solid " + (theme === "light" ? "#222" : "#DDD"),
+        },
     }), [profile.fontFamily, profile.fontSize, theme, height]);
 
     const overrideWords = useMemo(() => {
@@ -306,7 +310,10 @@ export default function CodeEditor(
     );
 
     return (
-        <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #333" }}>
+        <div style={{
+            borderRadius: 8, overflow: "hidden", 
+            border: theme === "light" ? "1px solid #ddd" : "1px solid #444"
+        }}>
             <CodeMirror
                 key={extensionsKey}
                 value={value}

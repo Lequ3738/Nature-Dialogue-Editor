@@ -1,10 +1,12 @@
 import { CodeStyleProfile } from "./CodeEditor";
 
 export type EdgeType = "default" | "true" | "false";
+export type FuncNodeType = "node" | "condition" | "start" | "end";
+export type NodeType = FuncNodeType | "comment";
 
 export interface Node {
     id: number;
-    type: "node" | "condition";
+    type: FuncNodeType;
     x: number;
     y: number;
     cn: string;
@@ -63,6 +65,12 @@ export interface EditorState {
     dragTarget: DragTarget | null;
     connecting: Connecting | null;
     resizing: Resizing | null;
+
+    title: string,
+    description: string,
+    author: string,
+    version: string,
+    forbiddenExpression: string,
 }
 
 export function createInitialState(): EditorState {
@@ -77,6 +85,12 @@ export function createInitialState(): EditorState {
         dragTarget: null,
         connecting: null,
         resizing: null,
+
+        title: "",
+        description: "",
+        author: "",
+        version: "",
+        forbiddenExpression: "",
     };
 }
 
