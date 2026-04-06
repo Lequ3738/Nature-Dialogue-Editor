@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CommentBox, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
+import type { CommentBox, CustomVariable, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
 import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import path from "node:path";
@@ -235,7 +235,7 @@ export default function App() {
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
 
-    const [settingsTab, setSettingsTab] = useState<'info' | 'editor' | 'about'>('info');
+    const [settingsTab, setSettingsTab] = useState<'info' | 'var' | 'editor' | 'about'>('info');
 
     // 窗口缩放监听
     const [tick, setTick] = useState(0);
@@ -1161,6 +1161,51 @@ export default function App() {
         [state.view.x, state.view.y, state.view.zoom]
     );
 
+    // ========== 自定义变量 操作函数 ==========
+    // 添加新变量
+    const handleAddVariable = () => {
+        const newVariable: CustomVariable = {
+            id: Date.now().toString(), // 用时间戳生成唯一ID
+            persistent: false,
+            type: "number",
+            name: `var_${Date.now().toString().slice(-6)}`, // 生成默认变量名
+            value: 0,
+        };
+        setState(prev => ({ ...prev, variables: [...prev.variables, newVariable] }));
+    };
+
+    // 更新变量属性
+    const handleUpdateVariable = (id: string, key: keyof CustomVariable, value: any) => {
+        setState(prev => {
+            return {
+                ...prev,
+                variables: prev.variables.map((item) => {
+                    if (item.id !== id) return item;
+                    // 类型切换时，自动转换值的格式
+                    if (key === "type") {
+                        const newType = value as "number" | "string";
+                        let newValue = item.value;
+                        if (newType === "number") {
+                            newValue = Number(item.value) || 0;
+                        } else {
+                            newValue = String(item.value);
+                        }
+                        return { ...item, type: newType, value: newValue };
+                    }
+                    return { ...item, [key]: value };
+                })
+            };
+        });
+    };
+
+    // 删除变量
+    const handleDeleteVariable = (id: string) => {
+        setState(prev => ({
+            ...prev,
+            variables: prev.variables.filter((item) => item.id !== id),
+        }));
+    };
+
     return (
         <>
             <div id="toolbar">
@@ -1848,6 +1893,12 @@ export default function App() {
                                     项目信息
                                 </button>
                                 <button
+                                    className={`settings-tab ${settingsTab === 'var' ? 'active' : ''}`}
+                                    onClick={() => setSettingsTab('var')}
+                                >
+                                    自定义变量
+                                </button>
+                                <button
                                     className={`settings-tab ${settingsTab === 'editor' ? 'active' : ''}`}
                                     onClick={() => setSettingsTab('editor')}
                                 >
@@ -1946,6 +1997,168 @@ export default function App() {
                                             height={180}
                                         />
                                     </div>
+                                </div>
+                            )}
+
+                            {settingsTab === 'var' && (
+                                <div className="settings-section">
+                                    <h3>自定义变量</h3>
+                                    <div 
+                                        className="variable-list-header"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 12,
+                                            padding: '0 8px 8px 8px',
+                                            fontSize: '12px',
+                                            color: 'var(--text)',
+                                            opacity: 0.6,
+                                            fontWeight: 600
+                                        }}
+                                        >
+                                        <div style={{ width: '60px', textAlign: 'center' }}>持久化</div>
+                                        <div style={{ width: '100px' }}>变量类型</div>
+                                        <div style={{ flex: 1 }}>变量名</div>
+                                        <div style={{ flex: 1.2 }}>变量值</div>
+                                        <div style={{ width: '60px', textAlign: 'center' }}>操作</div>
+                                        </div>
+
+                                        {/* 变量列表容器 */}
+                                        <div 
+                                        className="variable-list custom-scroll"
+                                        style={{
+                                            flex: 1,
+                                            overflowY: 'auto',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 8,
+                                            paddingRight: 4
+                                        }}
+                                        >
+                                        {state.variables.length === 0 ? (
+                                            <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            height: '120px',
+                                            fontSize: '14px',
+                                            opacity: 0.5,
+                                            color: 'var(--text)'
+                                            }}>
+                                            暂无自定义变量，点击下方按钮添加
+                                            </div>
+                                        ) : (
+                                            state.variables.map((variable) => (
+                                            <div
+                                                key={variable.id}
+                                                className="variable-row"
+                                                style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                                padding: '10px 12px',
+                                                background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                                border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
+                                                borderRadius: '8px'
+                                                }}
+                                            >
+                                                {/* 1. 是否持久化 勾选框 */}
+                                                <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={variable.persistent}
+                                                    onChange={(e) => handleUpdateVariable(variable.id, 'persistent', e.target.checked)}
+                                                    style={{
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    cursor: 'pointer',
+                                                    accentColor: 'var(--accent)'
+                                                    }}
+                                                />
+                                                </div>
+
+                                                {/* 2. 变量类型 下拉框 */}
+                                                <div style={{ width: '100px' }}>
+                                                <select
+                                                    value={variable.type}
+                                                    onChange={(e) => handleUpdateVariable(variable.id, 'type', e.target.value)}
+                                                    style={{ width: '100%', margin: 0 }}
+                                                >
+                                                    <option value="number">实数</option>
+                                                    <option value="string">字符串</option>
+                                                </select>
+                                                </div>
+
+                                                {/* 3. 变量名 输入框 */}
+                                                <div style={{ flex: 1 }}>
+                                                <input
+                                                    type="text"
+                                                    value={variable.name}
+                                                    onChange={(e) => handleUpdateVariable(variable.id, 'name', e.target.value)}
+                                                    placeholder="输入变量名"
+                                                    className="textarea-styled"
+                                                    style={{
+                                                    width: '100%',
+                                                    padding: '8px 10px',
+                                                    margin: 0,
+                                                    resize: 'none'
+                                                    }}
+                                                />
+                                                </div>
+
+                                                {/* 4. 变量值 输入框 */}
+                                                <div style={{ flex: 1.2 }}>
+                                                <input
+                                                    type={variable.type === 'number' ? 'number' : 'text'}
+                                                    value={variable.value}
+                                                    onChange={(e) => {
+                                                    const val = variable.type === 'number' 
+                                                        ? Number(e.target.value) || 0 
+                                                        : e.target.value;
+                                                    handleUpdateVariable(variable.id, 'value', val);
+                                                    }}
+                                                    placeholder="输入变量值"
+                                                    className="textarea-styled"
+                                                    style={{
+                                                    width: '100%',
+                                                    padding: '8px 10px',
+                                                    margin: 0,
+                                                    resize: 'none'
+                                                    }}
+                                                />
+                                                </div>
+
+                                                {/* 5. 删除按钮 */}
+                                                <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                                                <button
+                                                    onClick={() => handleDeleteVariable(variable.id)}
+                                                    className="secondary-button"
+                                                    style={{
+                                                    padding: '6px 10px',
+                                                    background: '#f04747',
+                                                    color: '#fff',
+                                                    fontSize: '12px'
+                                                    }}
+                                                >
+                                                    删除
+                                                </button>
+                                                </div>
+                                            </div>
+                                            ))
+                                        )}
+                                    </div>
+                                
+                                    <button
+                                    onClick={handleAddVariable}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 0',
+                                        marginTop: '8px',
+                                        flexShrink: 0
+                                    }}
+                                    >
+                                    + 添加自定义变量
+                                    </button>
                                 </div>
                             )}
 

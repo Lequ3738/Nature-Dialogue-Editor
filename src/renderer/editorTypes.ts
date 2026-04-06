@@ -71,6 +71,8 @@ export interface EditorState {
     author: string,
     version: string,
     forbiddenExpression: string,
+
+    variables: CustomVariable[],
 }
 
 export function createInitialState(): EditorState {
@@ -91,8 +93,18 @@ export function createInitialState(): EditorState {
         author: "",
         version: "",
         forbiddenExpression: "",
+
+        variables: [],
     };
 }
+
+export type CustomVariable = {
+    id: string; // 唯一标识，用于增删改查
+    persistent: boolean; // 是否持久化
+    type: "number" | "string"; // 变量类型：实数/字符串
+    name: string; // 变量名
+    value: string | number; // 变量值
+};
 
 export const defaultProfile: CodeStyleProfile = {
     name: "GameMaker Language",
@@ -522,10 +534,10 @@ export const defaultProfile: CodeStyleProfile = {
                 "pt_shape_disk", "pt_shape_square", "pt_shape_line", "pt_shape_star",
                 "pt_shape_circle", "pt_shape_ring", "pt_shape_sphere", "pt_shape_flare",
                 "pt_shape_spark", "pt_shape_explosion", "pt_shape_cloud", "pt_shape_smoke",
-                "pt_shape_snow", "ps_shape_rectangle", "ps_shape_ellipse", 
-                "ps_shape_diamond", "ps_shape_line", "ps_distr_linear", "ps_distr_gaussian", 
-                "ps_distr_invgaussian", "ps_force_constant", "ps_force_linear", 
-                "ps_force_quadratic", "ps_deflect_horizontal", "ps_deflect_vertical", 
+                "pt_shape_snow", "ps_shape_rectangle", "ps_shape_ellipse",
+                "ps_shape_diamond", "ps_shape_line", "ps_distr_linear", "ps_distr_gaussian",
+                "ps_distr_invgaussian", "ps_force_constant", "ps_force_linear",
+                "ps_force_quadratic", "ps_deflect_horizontal", "ps_deflect_vertical",
                 "ps_change_motion", "ps_change_shape", "ps_change_all", "true", "false", "pi"
             ]
         }, {
