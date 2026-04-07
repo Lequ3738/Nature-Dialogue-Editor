@@ -728,3 +728,22 @@ select:disabled {
     color: var(--text);
     font-size: 14px;
 }
+
+/* 固定表头与内容列严格对齐 */
+.variable-list-header > div {
+    flex-shrink: 0;
+}
+.variable-row > div {
+    flex-shrink: 0;
+}
+/* 变量行hover效果，与现有组件交互统一 */
+.variable-row:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent) !important;
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent) !important;
+    transition: all 0.2s ease;
+}
+/* 滚动容器优化，避免滚动条挤压内容 */
+.variable-list.custom-scroll {
+    margin-right: -4px;
+    padding-right: 8px !important;
+}

@@ -74,6 +74,10 @@ function createWindow() {
         });
     });
 
+    ipcMain.handle('editor:get-filename', (_, fullPath: string) => {
+        return path.basename(fullPath);
+    });
+
     mainWindow.on("close", (e) => {
         if (!isDirty) return;
         const res = dialog.showMessageBoxSync(mainWindow, {

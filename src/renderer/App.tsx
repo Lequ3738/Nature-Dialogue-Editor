@@ -4,6 +4,7 @@ import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import path from "node:path";
 import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./CodeEditor";
+import { ipcMain } from "electron";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -122,7 +123,7 @@ export default function App() {
     const [currentFileName, setCurrentFileName] = useState<string>("新文件");
     const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
     const [currentFileHandle, setCurrentFileHandle] = useState<FileHandle | null>(null);
-    const [isDirty, setIsDirty] = useState(false);
+    const [isDirty, setDirty] = useState(false);
     const stateRef = useRef(state);
     const suppressDirtyRef = useRef(false);
     const firstStateRef = useRef(true);
@@ -136,8 +137,17 @@ export default function App() {
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
 
-    // ... 设置面板中的编辑状态 ...
+    // 设置面板中的编辑状态
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
+
+    const [draftProjectState, setDraftProjectState] = useState<{
+        title: string;
+        author: string;
+        version: string;
+        description: string;
+        forbiddenExpression: string;
+        variables: CustomVariable[];
+    } | null>(null);
 
     // 数据迁移和验证辅助函数
     const validateProfile = (p: any) => {
@@ -284,8 +294,8 @@ export default function App() {
         }
         // 新文件且空白时，不认为是已修改（例如只做了平移/缩放）。
         if (isNewEmpty) return;
-        setIsDirty(true);
-    }, [state]);
+        setDirty(true);
+    }, [state.nodes, state.edges, state.comments]);
 
     useEffect(() => {
         const titleName = currentFileName || "新文件";
@@ -1044,7 +1054,7 @@ export default function App() {
             suppressDirtyRef.current = true;
             setState(parsed);
             setEditingId(null);
-            setIsDirty(false);
+            setDirty(false);
             const anyFile = file as any;
             const path = typeof anyFile.path === "string" ? anyFile.path : null;
             setCurrentFileName(file.name || "新文件");
@@ -1079,8 +1089,8 @@ export default function App() {
                 suppressDirtyRef.current = true;
                 setState(parsed);
                 setCurrentFilePath(filePath);
-                setCurrentFileName(path.basename(filePath));
-                setIsDirty(false);
+                setCurrentFileName(await ipc.invoke('editor:get-filename', filePath));
+                setDirty(false);
             } else {
                 alert("无法解析该文件。");
             }
@@ -1097,7 +1107,7 @@ export default function App() {
         if (currentFilePath) {
             const result = await ipc.invoke("editor:save-file", currentFilePath, content);
             if (result.success) {
-                setIsDirty(false);
+                setDirty(false);
                 return true;
             } else {
                 // 静默保存失败（如 A001 情况），回退到另存为
@@ -1121,8 +1131,8 @@ export default function App() {
         const result = await ipc.invoke("editor:save-file", filePath, makeGml(state));
         if (result.success) {
             setCurrentFilePath(filePath);
-            setCurrentFileName(path.basename(filePath)); // 更新标题为选择的文件名
-            setIsDirty(false);
+            setCurrentFileName(await ipc.invoke('editor:get-filename', filePath)); // 更新标题为选择的文件名
+            setDirty(false);
             return true;
         } else {
             alert("保存失败（错误代码：A002）");
@@ -1204,6 +1214,58 @@ export default function App() {
             ...prev,
             variables: prev.variables.filter((item) => item.id !== id),
         }));
+    };
+
+    // ========== 草稿专属变量操作函数 ==========
+    // 草稿-添加新变量
+    const handleDraftAddVariable = () => {
+        if (!draftProjectState) return;
+        const newVariable: CustomVariable = {
+            id: Date.now().toString(),
+            persistent: false,
+            type: "number",
+            name: `var_${Date.now().toString().slice(-6)}`,
+            value: 0,
+        };
+        setDraftProjectState(prev => prev ? {
+            ...prev,
+            variables: [...prev.variables, newVariable]
+        } : null);
+    };
+
+    // 草稿-更新变量属性
+    const handleDraftUpdateVariable = (id: string, key: keyof CustomVariable, value: any) => {
+        if (!draftProjectState) return;
+        setDraftProjectState(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                variables: prev.variables.map((item) => {
+                    if (item.id !== id) return item;
+                    // 类型切换时自动转换值格式（和原有逻辑保持一致）
+                    if (key === "type") {
+                        const newType = value as "number" | "string";
+                        let newValue = item.value;
+                        if (newType === "number") {
+                            newValue = Number(item.value) || 0;
+                        } else {
+                            newValue = String(item.value);
+                        }
+                        return { ...item, type: newType, value: newValue };
+                    }
+                    return { ...item, [key]: value };
+                })
+            };
+        });
+    };
+
+    // 草稿-删除变量
+    const handleDraftDeleteVariable = (id: string) => {
+        if (!draftProjectState) return;
+        setDraftProjectState(prev => prev ? {
+            ...prev,
+            variables: prev.variables.filter(item => item.id !== id)
+        } : null);
     };
 
     return (
@@ -1322,6 +1384,15 @@ export default function App() {
                     onClick={() => {
                         // 将当前主题的配置克隆一份到草稿中
                         setDraftProfile(codeProfile || defaultProfile);
+                        setDraftProjectState({
+                            title: state.title,
+                            author: state.author,
+                            version: state.version,
+                            description: state.description,
+                            forbiddenExpression: state.forbiddenExpression,
+                            variables: structuredClone(state.variables),
+                        });
+
                         setSettingsOpen(true);
                     }}
                 >⚙️</button>
@@ -1868,7 +1939,7 @@ export default function App() {
                 </div>
             ) : null}
 
-            {settingsOpen && draftProfile ? (
+            {settingsOpen && draftProfile && draftProjectState ? (
                 <div id="config-back">
                     <div
                         id="config-overlay"
@@ -1927,6 +1998,34 @@ export default function App() {
                                 <button
                                     onClick={() => {
                                         setCodeProfile(draftProfile);
+
+                                        // 判断数据是否改变
+                                        const originalProject = {
+                                            title: state.title,
+                                            author: state.author,
+                                            version: state.version,
+                                            description: state.description,
+                                            forbiddenExpression: state.forbiddenExpression,
+                                            variables: state.variables,
+                                        };
+                                        const hasChanges = JSON.stringify(originalProject) !== JSON.stringify(draftProjectState);
+
+                                        // 保存草稿数据
+                                        if (draftProjectState) {
+                                            setState(prev => ({
+                                                ...prev,
+                                                title: draftProjectState.title,
+                                                author: draftProjectState.author,
+                                                version: draftProjectState.version,
+                                                description: draftProjectState.description,
+                                                forbiddenExpression: draftProjectState.forbiddenExpression,
+                                                variables: draftProjectState.variables,
+                                            }));
+                                        }
+
+                                        if (hasChanges)
+                                            setDirty(true);
+                                        
                                         setSettingsOpen(false);
                                     }}
                                     style={{ flex: 1 }}
@@ -1950,8 +2049,10 @@ export default function App() {
                                             className="textarea-styled"
                                             style={{ display: "flex", marginLeft: "auto", width: 500 }}
                                             placeholder="输入项目名称"
-                                            value={state.title}
-                                            onChange={e => setState(prev => ({ ...prev, title: e.target.value }))}
+                                            value={ draftProjectState?.title || "" }
+                                            onChange={ e => setDraftProjectState(
+                                                prev => prev ? { ...prev, title: e.target.value } : null
+                                            )}
                                         />
                                     </div>
                                     <div className="form-group-row">
@@ -1961,8 +2062,10 @@ export default function App() {
                                             className="textarea-styled"
                                             placeholder="输入作者名称"
                                             style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={state.author}
-                                            onChange={e => setState(prev => ({ ...prev, author: e.target.value }))}
+                                            value={ draftProjectState?.author || "" }
+                                            onChange={ e => setDraftProjectState(
+                                                prev => prev ? { ...prev, author: e.target.value } : null
+                                            )}
                                         />
                                     </div>
                                     <div className="form-group-row">
@@ -1972,8 +2075,10 @@ export default function App() {
                                             className="textarea-styled"
                                             placeholder="输入版本号（如 1.0.0）"
                                             style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={state.version}
-                                            onChange={e => setState(prev => ({ ...prev, version: e.target.value }))}
+                                            value={ draftProjectState?.version || "" }
+                                            onChange={ e => setDraftProjectState(
+                                                prev => prev ? { ...prev, version: e.target.value } : null
+                                            )}
                                         />
                                     </div>
                                     <div className="form-group-row">
@@ -1983,15 +2088,19 @@ export default function App() {
                                             className="textarea-styled"
                                             placeholder="输入项目的描述文本"
                                             style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={state.description}
-                                            onChange={e => setState(prev => ({ ...prev, description: e.target.value }))}
+                                            value={ draftProjectState?.description || "" }
+                                            onChange={ e => setDraftProjectState(
+                                                prev => prev ? { ...prev, description: e.target.value } : null
+                                            )}
                                         />
                                     </div>
                                     <div className="form-group">
                                         <label>对话禁用表达式：</label>
                                         <CodeEditor
-                                            value={state.forbiddenExpression}
-                                            onChange={next => setState(prev => ({ ...prev, forbiddenExpression: next }))}
+                                            value={ draftProjectState?.forbiddenExpression || "" }
+                                            onChange={ next => setDraftProjectState(
+                                                prev => prev ? {...prev, forbiddenExpression: next} : null
+                                            )}
                                             profile={codeProfile}
                                             theme={theme}
                                             height={180}
@@ -2001,8 +2110,25 @@ export default function App() {
                             )}
 
                             {settingsTab === 'var' && (
-                                <div className="settings-section">
-                                    <h3>自定义变量</h3>
+                                <div className="settings-section" style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    height: '100%', // 核心：占满右侧内容区的全部高度
+                                    gap: '16px',
+                                    padding: 0, // 清除默认padding，用内部元素精准控制间距
+                                }}>
+                                    {/* 标题区域 - 固定不滚动 */}
+                                    <h3 style={{ 
+                                        margin: 0, 
+                                        paddingTop: 8,
+                                        paddingBottom: 15,
+                                        borderBottom: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`,
+                                        flexShrink: 0, // 禁止压缩，永久固定在顶部
+                                    }}>
+                                        自定义变量
+                                    </h3>
+
+                                    {/* 列表表头 - 固定不滚动 */}
                                     <div 
                                         className="variable-list-header"
                                         style={{
@@ -2013,154 +2139,153 @@ export default function App() {
                                             fontSize: '12px',
                                             color: 'var(--text)',
                                             opacity: 0.6,
-                                            fontWeight: 600
+                                            fontWeight: 600,
+                                            flexShrink: 0, // 禁止压缩，跟随标题固定
                                         }}
-                                        >
-                                        <div style={{ width: '60px', textAlign: 'center' }}>持久化</div>
-                                        <div style={{ width: '100px' }}>变量类型</div>
-                                        <div style={{ flex: 1 }}>变量名</div>
-                                        <div style={{ flex: 1.2 }}>变量值</div>
-                                        <div style={{ width: '60px', textAlign: 'center' }}>操作</div>
-                                        </div>
+                                    >
+                                        <div style={{ width: '50px', textAlign: 'center' }}>持久化</div>
+                                        <div style={{ width: '80px', textAlign: 'center' }}>变量类型</div>
+                                        <div style={{ width: '140px', textAlign: 'center' }}>变量名</div>
+                                        <div style={{ width: '200px', textAlign: 'center' }}>变量值</div>
+                                        <div style={{ width: '85px', textAlign: 'center' }}>操作</div>
+                                    </div>
 
-                                        {/* 变量列表容器 */}
-                                        <div 
+                                    {/* 变量列表容器 - 独立滚动区域 */}
+                                    <div 
                                         className="variable-list custom-scroll"
                                         style={{
-                                            flex: 1,
-                                            overflowY: 'auto',
+                                            flex: 1, // 核心：自动占满剩余全部高度
+                                            overflowY: 'auto', // 仅此处滚动，表头和按钮不动
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: 8,
-                                            paddingRight: 4
+                                            paddingRight: 4,
+                                            paddingBottom: 8,
                                         }}
-                                        >
-                                        {state.variables.length === 0 ? (
+                                    >
+                                        {(draftProjectState?.variables || []).length === 0 ? (
                                             <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            height: '120px',
-                                            fontSize: '14px',
-                                            opacity: 0.5,
-                                            color: 'var(--text)'
-                                            }}>
-                                            暂无自定义变量，点击下方按钮添加
-                                            </div>
-                                        ) : (
-                                            state.variables.map((variable) => (
-                                            <div
-                                                key={variable.id}
-                                                className="variable-row"
-                                                style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: 12,
-                                                padding: '10px 12px',
-                                                background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                                border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
-                                                borderRadius: '8px'
-                                                }}
-                                            >
-                                                {/* 1. 是否持久化 勾选框 */}
-                                                <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={variable.persistent}
-                                                    onChange={(e) => handleUpdateVariable(variable.id, 'persistent', e.target.checked)}
-                                                    style={{
-                                                    width: '16px',
-                                                    height: '16px',
-                                                    cursor: 'pointer',
-                                                    accentColor: 'var(--accent)'
-                                                    }}
-                                                />
-                                                </div>
-
-                                                {/* 2. 变量类型 下拉框 */}
-                                                <div style={{ width: '100px' }}>
-                                                <select
-                                                    value={variable.type}
-                                                    onChange={(e) => handleUpdateVariable(variable.id, 'type', e.target.value)}
-                                                    style={{ width: '100%', margin: 0 }}
-                                                >
-                                                    <option value="number">实数</option>
-                                                    <option value="string">字符串</option>
-                                                </select>
-                                                </div>
-
-                                                {/* 3. 变量名 输入框 */}
-                                                <div style={{ flex: 1 }}>
-                                                <input
-                                                    type="text"
-                                                    value={variable.name}
-                                                    onChange={(e) => handleUpdateVariable(variable.id, 'name', e.target.value)}
-                                                    placeholder="输入变量名"
-                                                    className="textarea-styled"
-                                                    style={{
-                                                    width: '100%',
-                                                    padding: '8px 10px',
-                                                    margin: 0,
-                                                    resize: 'none'
-                                                    }}
-                                                />
-                                                </div>
-
-                                                {/* 4. 变量值 输入框 */}
-                                                <div style={{ flex: 1.2 }}>
-                                                <input
-                                                    type={variable.type === 'number' ? 'number' : 'text'}
-                                                    value={variable.value}
-                                                    onChange={(e) => {
-                                                    const val = variable.type === 'number' 
-                                                        ? Number(e.target.value) || 0 
-                                                        : e.target.value;
-                                                    handleUpdateVariable(variable.id, 'value', val);
-                                                    }}
-                                                    placeholder="输入变量值"
-                                                    className="textarea-styled"
-                                                    style={{
-                                                    width: '100%',
-                                                    padding: '8px 10px',
-                                                    margin: 0,
-                                                    resize: 'none'
-                                                    }}
-                                                />
-                                                </div>
-
-                                                {/* 5. 删除按钮 */}
-                                                <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-                                                <button
-                                                    onClick={() => handleDeleteVariable(variable.id)}
-                                                    className="secondary-button"
-                                                    style={{
-                                                    padding: '6px 10px',
-                                                    background: '#f04747',
-                                                    color: '#fff',
-                                                    fontSize: '12px'
-                                                    }}
-                                                >
-                                                    删除
-                                                </button>
-                                                </div>
+                                                justifyContent: 'center',
+                                                height: '120px',
+                                                fontSize: '14px',
+                                                opacity: 0.5,
+                                                color: 'var(--text)'
+                                            }}>
+                                                暂无自定义变量，点击下方按钮添加
                                             </div>
+                                        ) : (
+                                            (draftProjectState?.variables || []).map((variable) => (
+                                                <div
+                                                    key={variable.id}
+                                                    className="variable-row"
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 12,
+                                                        padding: '10px 12px',
+                                                        background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                                        border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
+                                                        borderRadius: '8px',
+                                                        flexShrink: 0, // 防止行高被压缩
+                                                    }}
+                                                >
+                                                    {/* 1. 是否持久化 勾选框 */}
+                                                    <div style={{ width: '40px', display: 'flex', justifyContent: 'center' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={variable.persistent}
+                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'persistent', e.target.checked)}
+                                                            style={{
+                                                                width: '16px',
+                                                                height: '16px',
+                                                                cursor: 'pointer',
+                                                                accentColor: 'var(--accent)'
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* 2. 变量类型 下拉框 */}
+                                                    <div style={{ width: '90px' }}>
+                                                        <select
+                                                            value={variable.type}
+                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'type', e.target.value)}
+                                                            style={{ width: '100%', margin: 0 }}
+                                                        >
+                                                            <option value="number">实数</option>
+                                                            <option value="string">字符串</option>
+                                                        </select>
+                                                    </div>
+
+                                                    {/* 3. 变量名 输入框 */}
+                                                    <div style={{ flex: 1, marginRight: 0, }}>
+                                                        <input
+                                                            type="text"
+                                                            value={variable.name}
+                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'name', e.target.value)}
+                                                            placeholder="输入变量名"
+                                                            className="textarea-styled"
+                                                            style={{
+                                                                maxWidth: '120px',
+                                                                padding: '8px 10px',
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* 4. 变量值 输入框 */}
+                                                    <div style={{ flex: 1.6 }}>
+                                                        <input
+                                                            type={variable.type === 'number' ? 'number' : 'text'}
+                                                            value={variable.value}
+                                                            onChange={(e) => {
+                                                                const val = variable.type === 'number' 
+                                                                    ? Number(e.target.value) || 0 
+                                                                    : e.target.value;
+                                                                handleDraftUpdateVariable(variable.id, 'value', val);
+                                                            }}
+                                                            placeholder="输入变量值"
+                                                            className="textarea-styled"
+                                                            style={{
+                                                                maxWidth: '300px',
+                                                                padding: '8px 10px',
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* 5. 删除按钮 */}
+                                                    <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                                                        <button
+                                                            onClick={() => handleDraftDeleteVariable(variable.id)}
+                                                            style={{
+                                                                padding: '6px 10px',
+                                                                background: '#f04747',
+                                                            }}
+                                                        >
+                                                            删除
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             ))
                                         )}
                                     </div>
-                                
+
+                                    {/* 底部添加按钮 - 永久固定在底部，不随列表滚动 */}
                                     <button
-                                    onClick={handleAddVariable}
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px 0',
-                                        marginTop: '8px',
-                                        flexShrink: 0
-                                    }}
+                                        onClick={handleDraftAddVariable}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px 0',
+                                            flexShrink: 0, // 禁止压缩，永久固定在底部
+                                            marginTop: '8px'
+                                        }}
                                     >
-                                    + 添加自定义变量
+                                        + 添加自定义变量
                                     </button>
                                 </div>
                             )}
+
+                            
 
                             {/* 2. 代码编辑器设置标签 */}
                             {settingsTab === 'editor' && (
@@ -2386,8 +2511,8 @@ export default function App() {
                                             {/* Electron */}
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                                                 <div style={{ 
-                                                    width: '56px', 
-                                                    height: '56px', 
+                                                    width: '64px', 
+                                                    height: '64px', 
                                                     display: 'flex', 
                                                     alignItems: 'center', 
                                                     justifyContent: 'center',
@@ -2407,8 +2532,8 @@ export default function App() {
                                             {/* React */}
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                                                 <div style={{ 
-                                                    width: '56px', 
-                                                    height: '56px', 
+                                                    width: '64px', 
+                                                    height: '64px', 
                                                     display: 'flex', 
                                                     alignItems: 'center', 
                                                     justifyContent: 'center',
@@ -2428,8 +2553,8 @@ export default function App() {
                                             {/* Vite */}
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                                                 <div style={{ 
-                                                    width: '56px', 
-                                                    height: '56px', 
+                                                    width: '64px', 
+                                                    height: '64px', 
                                                     display: 'flex', 
                                                     alignItems: 'center', 
                                                     justifyContent: 'center',
