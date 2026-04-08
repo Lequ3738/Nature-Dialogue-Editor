@@ -4,6 +4,8 @@ export type EdgeType = "default" | "true" | "false";
 export type FuncNodeType = "node" | "condition" | "start" | "end";
 export type NodeType = FuncNodeType | "comment";
 
+export type ConfigTabs = "info" | "var" | "character" | "editor" | "about";
+
 export interface Node {
     id: number;
     type: FuncNodeType;
@@ -106,10 +108,22 @@ export type CustomVariable = {
     value: string | number; // 变量值
 };
 
+export type Character = {
+    id: string; // 唯一标识
+    nameCN: string; // 角色中文名
+    constantName: string; // 代码中使用的常量名
+    remark: string; // 角色备注
+};
+
 export const defaultProfile: CodeStyleProfile = {
     name: "GameMaker Language",
     fontFamily: "Cascadia Code, Noto Sans SC, monospace",
     fontSize: 18,
+
+    characterColorLight: "#800000",
+    characterColorDark: "#FF8080",
+    characters: [],
+    
     keywordGroups: [
         {
             id: "g1", name: "内置函数", type: "function",
