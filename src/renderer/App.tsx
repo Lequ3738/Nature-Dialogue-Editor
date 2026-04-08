@@ -152,7 +152,7 @@ export default function App() {
         if (!p.keywordGroups) p.keywordGroups = [];
         if (!p.characters) p.characters = [];
         if (p.rules && p.keywordGroups.length === 0) {
-            p.keywordGroups = [{ id: "legacy", name: "旧版规则", colorLight: "#ffffff", colorDark: "#ffffff", keywords: p.rules.map((r: any) => r.pattern) }];
+            p.keywordGroups = [{ id: "legacy", name: "旧版规则", colorLight: "#000000", colorDark: "#FFFFFF", keywords: p.rules.map((r: any) => r.pattern) }];
         }
         return p;
     };
@@ -198,7 +198,7 @@ export default function App() {
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
-                const imported = JSON.parse(event.target?.result as string);
+                const imported = JSON.parse(event.target?.result as string) as CodeStyleProfile;
 
                 // 基础校验：确保包含必要的 keywordGroups 字段
                 if (imported.keywordGroups) {
@@ -2214,8 +2214,8 @@ export default function App() {
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between',
-                                        paddingTop: 8,
-                                        paddingBottom: 15,
+                                        paddingTop: 1,
+                                        paddingBottom: 7,
                                         borderBottom: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`,
                                         flexShrink: 0,
                                     }}>
@@ -2223,10 +2223,10 @@ export default function App() {
                                         {/* 标题右侧：全局批量颜色设置，效仿代码编辑器界面 */}
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                <label style={{ fontSize: '12px', opacity: 0.8 }}>浅色高亮：</label>
+                                                <label>浅色：</label>
                                                 <input 
                                                     type="color"
-                                                    value="#800080"
+                                                    value={ draftProfile.characterColorLight }
                                                     onChange={(e) => {
                                                         if (!draftProfile) return;
                                                         setDraftProfile(prev => prev ? {
@@ -2237,10 +2237,10 @@ export default function App() {
                                                 />
                                             </div>
                                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                <label style={{ fontSize: '12px', opacity: 0.8 }}>深色高亮：</label>
+                                                <label>深色：</label>
                                                 <input 
                                                     type="color"
-                                                    value="#EF4DEF"
+                                                    value={ draftProfile.characterColorDark }
                                                     onChange={(e) => {
                                                         if (!draftProfile) return;
                                                         setDraftProfile(prev => prev ? {
@@ -2253,18 +2253,18 @@ export default function App() {
                                         </div>
                                     </div>
 
-                                    {/* 角色卡片网格 - Win10磁贴式整齐布局，独立滚动区域 */}
+                                    {/* 角色卡片网格 */}
                                     <div 
                                         className="custom-scroll"
                                         style={{
                                             flex: 1,
                                             overflowY: 'auto',
                                             display: 'grid',
-                                            // 响应式磁贴布局：最小宽度280px，自动填充，最多每行3个，间距均匀
-                                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
                                             gap: '16px',
                                             paddingRight: 4,
                                             paddingBottom: 8,
+                                            alignContent: 'start',
                                         }}
                                     >
                                         {/* 空状态提示 */}
@@ -2299,29 +2299,7 @@ export default function App() {
                                                         position: 'relative',
                                                     }}
                                                 >
-                                                    {/* 右上角删除按钮 */}
-                                                    <button
-                                                        onClick={() => handleDraftDeleteCharacter(character.id)}
-                                                        style={{
-                                                            position: 'absolute',
-                                                            top: '12px',
-                                                            right: '12px',
-                                                            width: '24px',
-                                                            height: '24px',
-                                                            padding: 0,
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            background: '#f04747',
-                                                            borderRadius: '4px',
-                                                            fontSize: '12px',
-                                                        }}
-                                                        title="删除角色"
-                                                    >
-                                                        ×
-                                                    </button>
-
-                                                    {/* 1. 角色中文名输入框 */}
+                                                    {/* 角色中文名输入框 */}
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                         <label style={{ fontSize: '12px', color: '#888' }}>角色中文名</label>
                                                         <input
@@ -2333,28 +2311,29 @@ export default function App() {
                                                             style={{
                                                                 padding: '8px 10px',
                                                                 width: '100%',
+                                                                boxSizing: 'border-box',
                                                             }}
                                                         />
                                                     </div>
 
-                                                    {/* 2. 常量名输入框（代码中使用） */}
+                                                    {/* 常量名输入框 */}
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                         <label style={{ fontSize: '12px', color: '#888' }}>常量名（代码中使用）</label>
                                                         <input
                                                             type="text"
                                                             value={character.constantName}
                                                             onChange={(e) => handleDraftUpdateCharacter(character.id, 'constantName', e.target.value)}
-                                                            placeholder="输入常量名，如 CHAR_PLAYER"
+                                                            placeholder="输入常量名称"
                                                             className="textarea-styled"
                                                             style={{
                                                                 padding: '8px 10px',
                                                                 width: '100%',
-                                                                fontFamily: 'monospace',
+                                                                boxSizing: 'border-box',
                                                             }}
                                                         />
                                                     </div>
 
-                                                    {/* 3. 固定高度多行备注输入框 */}
+                                                    {/* 固定高度多行备注输入框 */}
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
                                                         <label style={{ fontSize: '12px', color: '#888' }}>备注</label>
                                                         <textarea
@@ -2368,9 +2347,22 @@ export default function App() {
                                                                 width: '100%',
                                                                 resize: 'none', // 固定高度，禁止拉伸
                                                                 minHeight: '80px',
+                                                                boxSizing: 'border-box',
                                                             }}
                                                         />
                                                     </div>
+
+                                                    <button
+                                                        onClick={() => handleDraftDeleteCharacter(character.id)}
+                                                        style={{
+                                                            background: '#f04747',
+                                                            maxWidth: 60,
+                                                            margin: "auto",
+                                                        }}
+                                                        title="删除角色"
+                                                    >
+                                                        删除
+                                                    </button>
                                                 </div>
                                             ))
                                         )}
@@ -2380,12 +2372,6 @@ export default function App() {
                                     <button
                                         onClick={handleDraftAddCharacter}
                                         style={{
-                                            width: '100%',
-                                            padding: '12px 0',
-                                            flexShrink: 0,
-                                            marginTop: '8px',
-                                            fontSize: '14px',
-                                            fontWeight: 500,
                                         }}
                                     >
                                         + 添加角色
