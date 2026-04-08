@@ -12,6 +12,7 @@ import {
 } from "@codemirror/autocomplete";
 import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
 import { tags as t } from "@lezer/highlight";
+import { Character } from "./editorTypes";
 
 export type KeywordType = "function" | "variable" | "keyword" | "constant";
 
@@ -28,6 +29,11 @@ export type CodeStyleProfile = {
     name: string;
     fontFamily: string;
     fontSize: number;
+
+    characterColorLight: string;
+    characterColorDark: string;
+    characters: Character[];
+
     keywordGroups: KeywordGroup[]; 
 };
 
@@ -65,8 +71,16 @@ export default function CodeEditor(
                 }
             });
         });
+
+        profile.characters.forEach(char => {
+            const color = theme === "light" ? 
+                profile.characterColorLight : profile.characterColorDark;
+            const trimmed = char.constantName.trim();
+            if (trimmed) map.set(trimmed, color);
+        });
+
         return map;
-    }, [profile.keywordGroups, theme]);
+    }, [profile.keywordGroups, profile.characters, theme]);
 
     // 高亮插件逻辑
     const highlightPlugin = useMemo(() => ViewPlugin.fromClass(class {
@@ -178,6 +192,19 @@ export default function CodeEditor(
                     });
                 });
 
+                profile.characters.forEach(char => {
+                    const trimmedKey = char.constantName.trim();
+                    if (trimmedKey && !addedLabels.has(trimmedKey)) {
+                        options.push({
+                            label: trimmedKey,
+                            type: "constant",
+                            info: `[角色：${char.nameCN}]`,
+                            boost: 2
+                        });
+                        addedLabels.add(trimmedKey);
+                    }
+                });
+
                 // 从当前文档的语法树中提取“上下文变量”
                 syntaxTree(context.state).iterate({
                     enter: (node) => {
@@ -209,7 +236,7 @@ export default function CodeEditor(
                 };
             }]
         });
-    }, [profile.keywordGroups]);
+    }, [profile.keywordGroups, profile.characters]);
 
     const themeExt = useMemo(() => EditorView.theme({
         // 编辑器根容器

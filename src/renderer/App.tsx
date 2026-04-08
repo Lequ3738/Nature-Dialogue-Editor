@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CommentBox, CustomVariable, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
+import type { Character, CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
 import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import path from "node:path";
@@ -152,6 +152,7 @@ export default function App() {
     // 数据迁移和验证辅助函数
     const validateProfile = (p: any) => {
         if (!p.keywordGroups) p.keywordGroups = [];
+        if (!p.characters) p.characters = [];
         if (p.rules && p.keywordGroups.length === 0) {
             p.keywordGroups = [{ id: "legacy", name: "旧版规则", colorLight: "#ffffff", colorDark: "#ffffff", keywords: p.rules.map((r: any) => r.pattern) }];
         }
@@ -245,7 +246,7 @@ export default function App() {
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
 
-    const [settingsTab, setSettingsTab] = useState<'info' | 'var' | 'editor' | 'about'>('info');
+    const [settingsTab, setSettingsTab] = useState<ConfigTabs>("info");
 
     // 窗口缩放监听
     const [tick, setTick] = useState(0);
@@ -1268,6 +1269,46 @@ export default function App() {
         } : null);
     };
 
+    // ========== 新增：草稿专属角色操作函数 ==========
+    // 草稿-添加新角色
+    const handleDraftAddCharacter = () => {
+        if (!draftProfile) return;
+        const newCharacter: Character = {
+            id: Date.now().toString(),
+            nameCN: "新角色",
+            constantName: `CHAR_${Date.now().toString().slice(-6)}`,
+            remark: "",
+        };
+        setDraftProfile(prev => prev ? {
+            ...prev,
+            characters: [...prev.characters, newCharacter]
+        } : null);
+    };
+
+    // 草稿-更新角色属性
+    const handleDraftUpdateCharacter = (id: string, key: keyof Character, value: any) => {
+        if (!draftProfile) return;
+        setDraftProfile(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                characters: prev.characters.map((item) => {
+                    if (item.id !== id) return item;
+                    return { ...item, [key]: value };
+                })
+            };
+        });
+    };
+
+    // 草稿-删除角色
+    const handleDraftDeleteCharacter = (id: string) => {
+        if (!draftProfile) return;
+        setDraftProfile(prev => prev ? {
+            ...prev,
+            characters: prev.characters.filter(item => item.id !== id)
+        } : null);
+    };
+
     return (
         <>
             <div id="toolbar">
@@ -1970,6 +2011,12 @@ export default function App() {
                                     自定义变量
                                 </button>
                                 <button
+                                    className={`settings-tab ${settingsTab === "character" ? 'active' : ''}`}
+                                    onClick={() => setSettingsTab("character")}
+                                >
+                                    角色定义
+                                </button>
+                                <button
                                     className={`settings-tab ${settingsTab === 'editor' ? 'active' : ''}`}
                                     onClick={() => setSettingsTab('editor')}
                                 >
@@ -2275,7 +2322,6 @@ export default function App() {
                                         onClick={handleDraftAddVariable}
                                         style={{
                                             width: '100%',
-                                            padding: '10px 0',
                                             flexShrink: 0, // 禁止压缩，永久固定在底部
                                             marginTop: '8px'
                                         }}
@@ -2285,7 +2331,197 @@ export default function App() {
                                 </div>
                             )}
 
-                            
+                            {settingsTab === "character" && (
+                                <div className="settings-section" style={{ 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    height: '100%',
+                                    gap: '16px',
+                                    padding: 0,
+                                }}>
+                                    {/* 标题区域 - 固定不滚动，与其他界面风格统一 */}
+                                    <div style={{ 
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        paddingTop: 8,
+                                        paddingBottom: 15,
+                                        borderBottom: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`,
+                                        flexShrink: 0,
+                                    }}>
+                                        <h3 style={{ margin: 0 }}>角色定义</h3>
+                                        {/* 标题右侧：全局批量颜色设置，效仿代码编辑器界面 */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                <label style={{ fontSize: '12px', opacity: 0.8 }}>浅色高亮：</label>
+                                                <input 
+                                                    type="color"
+                                                    value="#800080"
+                                                    onChange={(e) => {
+                                                        if (!draftProfile) return;
+                                                        setDraftProfile(prev => prev ? {
+                                                            ...prev,
+                                                            characterColorLight: e.target.value,
+                                                        } : null);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                <label style={{ fontSize: '12px', opacity: 0.8 }}>深色高亮：</label>
+                                                <input 
+                                                    type="color"
+                                                    value="#EF4DEF"
+                                                    onChange={(e) => {
+                                                        if (!draftProfile) return;
+                                                        setDraftProfile(prev => prev ? {
+                                                            ...prev,
+                                                            characterColorDark: e.target.value,
+                                                        } : null);
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 角色卡片网格 - Win10磁贴式整齐布局，独立滚动区域 */}
+                                    <div 
+                                        className="custom-scroll"
+                                        style={{
+                                            flex: 1,
+                                            overflowY: 'auto',
+                                            display: 'grid',
+                                            // 响应式磁贴布局：最小宽度280px，自动填充，最多每行3个，间距均匀
+                                            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                                            gap: '16px',
+                                            paddingRight: 4,
+                                            paddingBottom: 8,
+                                        }}
+                                    >
+                                        {/* 空状态提示 */}
+                                        {(draftProfile?.characters || []).length === 0 ? (
+                                            <div style={{
+                                                gridColumn: '1 / -1',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                height: '120px',
+                                                fontSize: '14px',
+                                                opacity: 0.5,
+                                                color: 'var(--text)'
+                                            }}>
+                                                暂无角色定义，点击下方按钮添加
+                                            </div>
+                                        ) : (
+                                            // 角色卡片循环
+                                            (draftProfile?.characters || []).map((character) => (
+                                                <div
+                                                    key={character.id}
+                                                    className="character-card"
+                                                    style={{
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '12px',
+                                                        padding: '16px',
+                                                        background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                                        border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
+                                                        borderRadius: '8px',
+                                                        flexShrink: 0,
+                                                        position: 'relative',
+                                                    }}
+                                                >
+                                                    {/* 右上角删除按钮 */}
+                                                    <button
+                                                        onClick={() => handleDraftDeleteCharacter(character.id)}
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: '12px',
+                                                            right: '12px',
+                                                            width: '24px',
+                                                            height: '24px',
+                                                            padding: 0,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            background: '#f04747',
+                                                            borderRadius: '4px',
+                                                            fontSize: '12px',
+                                                        }}
+                                                        title="删除角色"
+                                                    >
+                                                        ×
+                                                    </button>
+
+                                                    {/* 1. 角色中文名输入框 */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <label style={{ fontSize: '12px', color: '#888' }}>角色中文名</label>
+                                                        <input
+                                                            type="text"
+                                                            value={character.nameCN}
+                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'nameCN', e.target.value)}
+                                                            placeholder="输入角色中文名"
+                                                            className="textarea-styled"
+                                                            style={{
+                                                                padding: '8px 10px',
+                                                                width: '100%',
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* 2. 常量名输入框（代码中使用） */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <label style={{ fontSize: '12px', color: '#888' }}>常量名（代码中使用）</label>
+                                                        <input
+                                                            type="text"
+                                                            value={character.constantName}
+                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'constantName', e.target.value)}
+                                                            placeholder="输入常量名，如 CHAR_PLAYER"
+                                                            className="textarea-styled"
+                                                            style={{
+                                                                padding: '8px 10px',
+                                                                width: '100%',
+                                                                fontFamily: 'monospace',
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* 3. 固定高度多行备注输入框 */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                                                        <label style={{ fontSize: '12px', color: '#888' }}>备注</label>
+                                                        <textarea
+                                                            rows={4}
+                                                            value={character.remark}
+                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'remark', e.target.value)}
+                                                            placeholder="输入角色备注信息"
+                                                            className="custom-scroll"
+                                                            style={{
+                                                                padding: '8px 10px',
+                                                                width: '100%',
+                                                                resize: 'none', // 固定高度，禁止拉伸
+                                                                minHeight: '80px',
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+
+                                    {/* 底部固定：占满全宽的添加角色按钮 */}
+                                    <button
+                                        onClick={handleDraftAddCharacter}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 0',
+                                            flexShrink: 0,
+                                            marginTop: '8px',
+                                            fontSize: '14px',
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        + 添加角色
+                                    </button>
+                                </div>
+                            )}
 
                             {/* 2. 代码编辑器设置标签 */}
                             {settingsTab === 'editor' && (
