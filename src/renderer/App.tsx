@@ -1,8 +1,17 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Character, CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
+import type { CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, ProjectData, Resizing } from "./editorTypes";
 import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
-import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./CodeEditor";
+import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
+import { AboutScreen } from "./config/About";
+import { CodeConfigScreen } from "./config/CodeConfig";
+import { CharacterScreen } from "./config/Character";
+import { VariablesConfigScreen } from "./config/VariablesConfig";
+import { ProjectInfoScreen } from "./config/ProjectInfo";
+import { ConfigSidebar } from "./config/ConfigSidebar";
+import { EditingCommentWindows, EditingNodeWindows } from "./components/EditingWindow";
+import { MiniMap, MiniMapMeta, MiniMapResize, MiniMapSize, MiniMapViewStyle } from "./components/MiniMap";
+import { TopBar } from "./components/TopBar";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -13,16 +22,14 @@ import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./
  * - Canvas 负责连线与缩略图，DOM 负责交互与文本/表单
  * - Electron 环境下尽可能覆盖写回已打开文件；无句柄/路径时回退为下载导出
  */
-type ModalDraft = {
+export type ModalDraft = {
     cn: string;
     en: string;
     code: string;
     color: string;
 };
 
-const NODE_WIDTH = 260;
-const NODE_HEIGHT = 120;
-const PRESET_COLORS = [
+export const PRESET_COLORS = [
     "#7289da",
     "#e67e22",
     "#43b581",
@@ -68,7 +75,7 @@ function hexToRgba(hex: string, alpha: number): string {
     return `rgba(0, 0, 0, ${alpha})`;
 }
 
-function getIpcRenderer(): any | null {
+export function getIpcRenderer(): any | null {
     try {
         const req = (window as any).require;
         if (typeof req !== "function") return null;
@@ -138,14 +145,7 @@ export default function App() {
     // 设置面板中的编辑状态
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
 
-    const [draftProjectState, setDraftProjectState] = useState<{
-        title: string;
-        author: string;
-        version: string;
-        description: string;
-        forbiddenExpression: string;
-        variables: CustomVariable[];
-    } | null>(null);
+    const [draftProjectState, setDraftProjectState] = useState<ProjectData | null>(null);
 
     // 数据迁移和验证辅助函数
     const validateProfile = (p: any) => {
@@ -224,14 +224,8 @@ export default function App() {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const fileMenuRef = useRef<HTMLDivElement | null>(null);
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
-    const [minimapSize, setMinimapSize] = useState(() => ({ w: 260, h: 180 }));
-    const minimapResizeRef = useRef<null | {
-        edge: "left" | "top";
-        ox: number;
-        oy: number;
-        w: number;
-        h: number;
-    }>(null);
+    const [minimapSize, setMinimapSize] = useState<MiniMapSize>(() => ({ w: 260, h: 180 }));
+    const minimapResizeRef = useRef<null | MiniMapResize>(null);
     const [edgeMenu, setEdgeMenu] = useState<null | { fromId: number; x: number; y: number }>(null);
 
     const [windowSize, setWindowSize] = useState(() => ({
@@ -389,7 +383,7 @@ export default function App() {
 
     const connectingFromId = state.connecting?.fromId ?? null;
 
-    const minimapMeta = useMemo(() => {
+    const minimapMeta = useMemo<MiniMapMeta>(() => {
         const W = minimapSize.w;
         const H = minimapSize.h;
         const pad = 10;
@@ -469,7 +463,7 @@ export default function App() {
         tick
     ]);
 
-    const minimapViewStyle = useMemo(
+    const minimapViewStyle = useMemo<MiniMapViewStyle>(
         () =>
             ({
                 width: minimapMeta.viewRect.width + "px",
@@ -1170,226 +1164,29 @@ export default function App() {
         [state.view.x, state.view.y, state.view.zoom]
     );
 
-    // 草稿-添加新变量
-    const handleDraftAddVariable = () => {
-        if (!draftProjectState) return;
-        const newVariable: CustomVariable = {
-            id: Date.now().toString(),
-            persistent: false,
-            type: "number",
-            name: `var_${Date.now().toString().slice(-6)}`,
-            value: 0,
-        };
-        setDraftProjectState(prev => prev ? {
-            ...prev,
-            variables: [...prev.variables, newVariable]
-        } : null);
-    };
-
-    // 草稿-更新变量属性
-    const handleDraftUpdateVariable = (id: string, key: keyof CustomVariable, value: any) => {
-        if (!draftProjectState) return;
-        setDraftProjectState(prev => {
-            if (!prev) return null;
-            return {
-                ...prev,
-                variables: prev.variables.map((item) => {
-                    if (item.id !== id) return item;
-                    // 类型切换时自动转换值格式
-                    if (key === "type") {
-                        const newType = value as "number" | "string";
-                        let newValue = item.value;
-                        if (newType === "number") {
-                            newValue = Number(item.value) || 0;
-                        } else {
-                            newValue = String(item.value);
-                        }
-                        return { ...item, type: newType, value: newValue };
-                    }
-                    return { ...item, [key]: value };
-                })
-            };
-        });
-    };
-
-    // 草稿-删除变量
-    const handleDraftDeleteVariable = (id: string) => {
-        if (!draftProjectState) return;
-        setDraftProjectState(prev => prev ? {
-            ...prev,
-            variables: prev.variables.filter(item => item.id !== id)
-        } : null);
-    };
-
-    // ========== 新增：草稿专属角色操作函数 ==========
-    // 草稿-添加新角色
-    const handleDraftAddCharacter = () => {
-        if (!draftProfile) return;
-        const newCharacter: Character = {
-            id: Date.now().toString(),
-            nameCN: "新角色",
-            constantName: `CHAR_${Date.now().toString().slice(-6)}`,
-            remark: "",
-        };
-        setDraftProfile(prev => prev ? {
-            ...prev,
-            characters: [...prev.characters, newCharacter]
-        } : null);
-    };
-
-    // 草稿-更新角色属性
-    const handleDraftUpdateCharacter = (id: string, key: keyof Character, value: any) => {
-        if (!draftProfile) return;
-        setDraftProfile(prev => {
-            if (!prev) return null;
-            return {
-                ...prev,
-                characters: prev.characters.map((item) => {
-                    if (item.id !== id) return item;
-                    return { ...item, [key]: value };
-                })
-            };
-        });
-    };
-
-    // 草稿-删除角色
-    const handleDraftDeleteCharacter = (id: string) => {
-        if (!draftProfile) return;
-        setDraftProfile(prev => prev ? {
-            ...prev,
-            characters: prev.characters.filter(item => item.id !== id)
-        } : null);
-    };
-
     return (
         <>
-            <div id="toolbar">
-                <button
-                    onClick={() => {
-                        setState((prev) =>
-                            addObject(prev, "node", windowSize.w, windowSize.h)
-                        );
-                    }}
-                >
-                    + 对话
-                </button>
-                <button
-                    onClick={() => {
-                        setState((prev) =>
-                            addObject(prev, "condition", windowSize.w, windowSize.h)
-                        );
-                    }}
-                    style={theme === "dark" ?
-                        { background: "#bf6b21" } :
-                        { background: "#e67e22" }
-                    }
-                >
-                    + 条件
-                </button>
-                <button
-                    onClick={() => {
-                        setState((prev) =>
-                            addObject(prev, "comment", windowSize.w, windowSize.h)
-                        );
-                    }}
-                    style={theme === "dark" ?
-                        { background: "#288856" } :
-                        { background: "#3baa71" }
-                    }
-                >
-                    + 注释
-                </button>
-                <button
-                    onClick={() => {
-                        setState((prev) =>
-                            addObject(prev, "start", windowSize.w, windowSize.h)
-                        );
-                    }}
-                    style={theme === "dark" ?
-                        { background: "#ae3fb6" } :
-                        { background: "#da57e3" }
-                    }
-                >
-                    + 开始
-                </button>
-                <button
-                    onClick={() => {
-                        setState((prev) =>
-                            addObject(prev, "end", windowSize.w, windowSize.h)
-                        );
-                    }}
-                    style={theme === "dark" ?
-                        { background: "#828f90" } :
-                        { background: "#96a4a5" }
-                    }
-                >
-                    + 结束
-                </button>
-                <div style={{ flexGrow: 1 }} />
-                <div className={`file-menu ${fileMenuOpen ? "open" : ""}`} ref={fileMenuRef}>
-                    <button
-                        className="file-menu-button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setFileMenuOpen((v) => !v);
-                        }}
-                    >
-                        文件 ▾
-                    </button>
-                    <div className="file-menu-dropdown" role="menu">
-                        <button
-                            onClick={handleOpenClick}
-                        >
-                            📖 打开
-                        </button>
-                        <button
-                            disabled={isNewEmpty}
-                            onClick={handleSave}
-                        >
-                            💾 保存
-                        </button>
-                        <button
-                            disabled={isNewEmpty}
-                            onClick={handleSaveAs}
-                        >
-                            💿 另存为
-                        </button>
-                    </div>
-                </div>
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    id="importInput"
-                    hidden
-                    onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onImport(f);
-                    }}
-                />
-                <button
-                    className="theme-toggle"
-                    onClick={() => handleThemeChange(theme === "dark" ? "light" : "dark")}
-                >
-                    {theme === "dark" ? "🌙" : "🌞"}
-                </button>
-                <button
-                    className="theme-toggle"
-                    onClick={() => {
-                        // 将当前主题的配置克隆一份到草稿中
-                        setDraftProfile(codeProfile || defaultProfile);
-                        setDraftProjectState({
-                            title: state.title,
-                            author: state.author,
-                            version: state.version,
-                            description: state.description,
-                            forbiddenExpression: state.forbiddenExpression,
-                            variables: structuredClone(state.variables),
-                        });
-
-                        setSettingsOpen(true);
-                    }}
-                >⚙️</button>
-            </div>
+            <TopBar
+                theme={theme}
+                setState={setState}
+                windowSize={windowSize}
+                fileMenuOpen={fileMenuOpen}
+                setFileMenuOpen={setFileMenuOpen}
+                handleOpenClick={handleOpenClick}
+                handleSave={handleSave}
+                handleSaveAs={handleSaveAs}
+                fileMenuRef={fileMenuRef}
+                isNewEmpty={isNewEmpty}
+                fileInputRef={fileInputRef}
+                onImport={onImport}
+                handleThemeChange={handleThemeChange}
+                setDraftProfile={setDraftProfile}
+                codeProfile={codeProfile}
+                defaultProfile={defaultProfile}
+                setDraftProjectState={setDraftProjectState}
+                state={state}
+                setSettingsOpen={setSettingsOpen}
+            />
 
             <div id="viewport" ref={viewportRef}>
                 <canvas
@@ -1739,200 +1536,44 @@ export default function App() {
                 </div>
             ) : null}
 
-            <div id="minimap" style={{ width: minimapSize.w, height: minimapSize.h }}>
-                <canvas
-                    id="minimap-canvas"
-                    ref={minimapCanvasRef}
-                    onMouseDown={(e) => {
-                        const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
-                        const mx = e.clientX - rect.left;
-                        const my = e.clientY - rect.top;
-                        const worldX = (mx - minimapMeta.offsetX) / minimapMeta.scale;
-                        const worldY = (my - minimapMeta.offsetY) / minimapMeta.scale;
-                        setState((prev) => ({
-                            ...prev,
-                            view: {
-                                ...prev.view,
-                                x: -worldX * prev.view.zoom + window.innerWidth / 2,
-                                y: -worldY * prev.view.zoom + window.innerHeight / 2,
-                            },
-                        }));
-                    }}
+            {/* 缩略图 */}
+            <MiniMap
+                zoomPercent={zoomPercent}
+                minimapSize={minimapSize}
+                minimapCanvasRef={minimapCanvasRef}
+                minimapMeta={minimapMeta}
+                minimapResizeRef={minimapResizeRef}
+                minimapViewStyle={minimapViewStyle}
+                setState={setState}
+            />
+
+            {/* 节点编辑界面 */}
+            {editingCommentId !== null && 
+                <EditingCommentWindows
+                    commentDraft={commentDraft}
+                    setCommentDraft={setCommentDraft}
+                    commentColorDraft={commentColorDraft}
+                    setCommentColorDraft={setCommentColorDraft}
+                    deleteComment={deleteComment}
+                    closeCommentModal={closeCommentModal}
+                    saveCommentModal={saveCommentModal}
                 />
-                <div
-                    className="minimap-resize minimap-resize-left"
-                    onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        minimapResizeRef.current = {
-                            edge: "left",
-                            ox: e.clientX,
-                            oy: e.clientY,
-                            w: minimapSize.w,
-                            h: minimapSize.h,
-                        };
-                    }}
+            }
+
+            {editingId !== null && 
+                <EditingNodeWindows
+                    theme={theme}
+                    editingNode={editingNode}
+                    draft={draft}
+                    setDraft={setDraft}
+                    codeProfile={codeProfile}
+                    deleteCurrent={deleteCurrent}
+                    closeModal={closeModal}
+                    saveModal={saveModal}
                 />
-                <div
-                    className="minimap-resize minimap-resize-top"
-                    onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        minimapResizeRef.current = {
-                            edge: "top",
-                            ox: e.clientX,
-                            oy: e.clientY,
-                            w: minimapSize.w,
-                            h: minimapSize.h,
-                        };
-                    }}
-                />
-                <div id="minimap-zoom">缩放: {zoomPercent}%</div>
-                <div id="minimap-view" style={minimapViewStyle} />
-            </div>
+            }
 
-            {editingCommentId !== null ? (
-                <div id="modal-overlay" style={{ display: "flex" }}>
-                    <div id="modal">
-                        <h3 style={{ margin: 0 }}>注释配置</h3>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <label style={{ fontSize: 12, color: "#888" }}>注释文字</label>
-                            <textarea
-                                rows={4}
-                                value={commentDraft}
-                                onChange={(e) => setCommentDraft(e.target.value)}
-                                className="custom-scroll"
-                            />
-                        </div>
-                        <div className="color-row">
-                            <label>注释颜色:</label>
-                            <input
-                                type="color"
-                                value={commentColorDraft}
-                                onChange={(e) => setCommentColorDraft(e.target.value)}
-                            />
-                            <div className="preset-color-list">
-                                {PRESET_COLORS.map((color) => (
-                                    <button
-                                        key={color}
-                                        className={`preset-color ${commentColorDraft === color ? "active" : ""}`}
-                                        style={{ background: color }}
-                                        onClick={() => setCommentColorDraft(color)}
-                                        title={color}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                            <button onClick={deleteComment} style={{ background: "#f04747" }}>
-                                删除注释框
-                            </button>
-                            <div style={{ display: "flex", gap: 10 }}>
-                                <button
-                                    onClick={closeCommentModal}
-                                    className="secondary-button"
-                                >
-                                    取消
-                                </button>
-                                <button onClick={saveCommentModal}>保存</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-            {editingId !== null ? (
-                <div
-                    id="modal-overlay"
-                    style={{
-                        display: "flex",
-                    }}
-                >
-                    <div id="modal">
-                        <h3 id="m-title" style={{ margin: 0 }}>
-                            节点配置
-                        </h3>
-
-                        {(editingNode?.type !== "condition" && editingNode?.type !== "end" &&
-                            editingNode?.type !== "start") ? (
-                            <div className="lang-box">
-                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                    <label style={{ fontSize: 12, color: "#888" }}>中文</label>
-                                    <textarea
-                                        id="m-cn"
-                                        className="custom-scroll"
-                                        rows={4}
-                                        value={draft.cn}
-                                        onChange={(e) =>
-                                            setDraft((d) => ({ ...d, cn: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                    <label style={{ fontSize: 12, color: "#888" }}>英文</label>
-                                    <textarea
-                                        id="m-en"
-                                        className="custom-scroll"
-                                        rows={4}
-                                        value={draft.en}
-                                        onChange={(e) =>
-                                            setDraft((d) => ({ ...d, en: e.target.value }))
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        ) : null}
-
-                        {editingNode?.type !== "start" ?
-                            <>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                                    <label style={{ fontSize: 12, color: "#888" }}>执行代码</label>
-                                    <CodeEditor
-                                        value={draft.code}
-                                        onChange={(next) => setDraft((d) => ({ ...d, code: next }))}
-                                        profile={codeProfile}
-                                        theme={theme}
-                                        height={180}
-                                    />
-                                </div>
-                            </> : null
-                        }
-
-                        <div className="color-row">
-                            <label>自定义颜色:</label>
-                            <input
-                                type="color"
-                                id="m-color"
-                                value={draft.color}
-                                onChange={(e) => setDraft((d) => ({ ...d, color: e.target.value }))}
-                            />
-                            <div className="preset-color-list">
-                                {PRESET_COLORS.map((color) => (
-                                    <button
-                                        key={color}
-                                        className={`preset-color ${draft.color === color ? "active" : ""}`}
-                                        style={{ background: color }}
-                                        onClick={() => setDraft((d) => ({ ...d, color }))}
-                                        title={color}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                            <button onClick={deleteCurrent} style={{ background: "#f04747" }}>
-                                删除此节点
-                            </button>
-                            <div style={{ display: "flex", gap: 10 }}>
-                                <button onClick={closeModal} className="secondary-button">
-                                    取消
-                                </button>
-                                <button onClick={saveModal}>保存</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-
-            {settingsOpen && draftProfile && draftProjectState ? (
+            {settingsOpen && draftProfile && draftProjectState && (
                 <div id="config-back">
                     <div
                         id="config-overlay"
@@ -1947,945 +1588,72 @@ export default function App() {
                         }}
                     >
                         {/* --- 左侧垂直标签栏 --- */}
-                        <div className="settings-sidebar">
-                            <div className="settings-sidebar-top">
-                                <div className="settings-sidebar-title">项目设置</div>
-                                <button
-                                    className={`settings-tab ${settingsTab === 'info' ? 'active' : ''}`}
-                                    onClick={() => setSettingsTab('info')}
-                                >
-                                    项目信息
-                                </button>
-                                <button
-                                    className={`settings-tab ${settingsTab === 'var' ? 'active' : ''}`}
-                                    onClick={() => setSettingsTab('var')}
-                                >
-                                    自定义变量
-                                </button>
-                                <button
-                                    className={`settings-tab ${settingsTab === "character" ? 'active' : ''}`}
-                                    onClick={() => setSettingsTab("character")}
-                                >
-                                    角色定义
-                                </button>
-                                <button
-                                    className={`settings-tab ${settingsTab === 'editor' ? 'active' : ''}`}
-                                    onClick={() => setSettingsTab('editor')}
-                                >
-                                    代码编辑器
-                                </button>
-                                <button
-                                    className={`settings-tab ${settingsTab === 'about' ? 'active' : ''}`}
-                                    onClick={() => setSettingsTab('about')}
-                                >
-                                    关于
-                                </button>
-                            </div>
-
-                            {/* 左下角：保存与取消按钮 */}
-                            <div style={{
-                                display: "flex", gap: 10, padding: "12px 16px", 
-                                borderTop: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`
-                            }}>
-                                <button
-                                    onClick={() => setSettingsOpen(false)}
-                                    className="secondary-button"
-                                    style={{ flex: 1 }}
-                                >
-                                    取消
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setCodeProfile(draftProfile);
-
-                                        // 判断数据是否改变
-                                        const originalProject = {
-                                            title: state.title,
-                                            author: state.author,
-                                            version: state.version,
-                                            description: state.description,
-                                            forbiddenExpression: state.forbiddenExpression,
-                                            variables: state.variables,
-                                        };
-                                        const hasChanges = JSON.stringify(originalProject) !== JSON.stringify(draftProjectState);
-
-                                        // 保存草稿数据
-                                        if (draftProjectState) {
-                                            setState(prev => ({
-                                                ...prev,
-                                                title: draftProjectState.title,
-                                                author: draftProjectState.author,
-                                                version: draftProjectState.version,
-                                                description: draftProjectState.description,
-                                                forbiddenExpression: draftProjectState.forbiddenExpression,
-                                                variables: draftProjectState.variables,
-                                            }));
-                                        }
-
-                                        if (hasChanges)
-                                            setDirty(true);
-                                        
-                                        setSettingsOpen(false);
-                                    }}
-                                    style={{ flex: 1 }}
-                                >
-                                    保存
-                                </button>
-                            </div>
-                        </div>
+                        <ConfigSidebar
+                            theme={theme}
+                            settingsTab={settingsTab}
+                            draftProfile={draftProfile}
+                            state={state}
+                            draftProjectState={draftProjectState}
+                            setSettingsTab={setSettingsTab}
+                            setCodeProfile={setCodeProfile}
+                            setState={setState}
+                            setSettingsOpen={setSettingsOpen}
+                            setDirty={setDirty}
+                        />
 
                         {/* 右侧内容区域 */}
                         <div className="settings-content custom-scroll">
                             {/* 1. 项目信息标签 */}
                             {settingsTab === 'info' && (
-                                <div className="settings-section">
-                                    <h3>项目信息</h3>
-
-                                    <div className="form-group-row">
-                                        <label style={{ paddingTop: 8 }}>项目标题：</label>
-                                        <input
-                                            type="text"
-                                            className="textarea-styled"
-                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            placeholder="输入项目名称"
-                                            value={ draftProjectState?.title || "" }
-                                            onChange={ e => setDraftProjectState(
-                                                prev => prev ? { ...prev, title: e.target.value } : null
-                                            )}
-                                        />
-                                    </div>
-                                    <div className="form-group-row">
-                                        <label style={{ paddingTop: 8 }}>作者：</label>
-                                        <input
-                                            type="text"
-                                            className="textarea-styled"
-                                            placeholder="输入作者名称"
-                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={ draftProjectState?.author || "" }
-                                            onChange={ e => setDraftProjectState(
-                                                prev => prev ? { ...prev, author: e.target.value } : null
-                                            )}
-                                        />
-                                    </div>
-                                    <div className="form-group-row">
-                                        <label style={{ paddingTop: 8 }}>版本号：</label>
-                                        <input
-                                            type="text"
-                                            className="textarea-styled"
-                                            placeholder="输入版本号（如 1.0.0）"
-                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={ draftProjectState?.version || "" }
-                                            onChange={ e => setDraftProjectState(
-                                                prev => prev ? { ...prev, version: e.target.value } : null
-                                            )}
-                                        />
-                                    </div>
-                                    <div className="form-group-row">
-                                        <label style={{ paddingTop: 8 }}>描述：</label>
-                                        <input
-                                            type="text"
-                                            className="textarea-styled"
-                                            placeholder="输入项目的描述文本"
-                                            style={{ display: "flex", marginLeft: "auto", width: 500 }}
-                                            value={ draftProjectState?.description || "" }
-                                            onChange={ e => setDraftProjectState(
-                                                prev => prev ? { ...prev, description: e.target.value } : null
-                                            )}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>对话禁用表达式：</label>
-                                        <CodeEditor
-                                            value={ draftProjectState?.forbiddenExpression || "" }
-                                            onChange={ next => setDraftProjectState(
-                                                prev => prev ? {...prev, forbiddenExpression: next} : null
-                                            )}
-                                            profile={codeProfile}
-                                            theme={theme}
-                                            height={180}
-                                        />
-                                    </div>
-                                </div>
+                                <ProjectInfoScreen
+                                    theme={theme}
+                                    codeProfile={codeProfile}
+                                    draftProjectState={draftProjectState}
+                                    setDraftProjectState={setDraftProjectState}
+                                />
                             )}
 
                             {settingsTab === 'var' && (
-                                <div className="settings-section" style={{ 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    height: '100%', // 核心：占满右侧内容区的全部高度
-                                    gap: '16px',
-                                    padding: 0, // 清除默认padding，用内部元素精准控制间距
-                                }}>
-                                    {/* 标题区域 - 固定不滚动 */}
-                                    <h3 style={{ 
-                                        margin: 0, 
-                                        paddingTop: 8,
-                                        paddingBottom: 15,
-                                        borderBottom: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`,
-                                        flexShrink: 0, // 禁止压缩，永久固定在顶部
-                                    }}>
-                                        自定义变量
-                                    </h3>
-
-                                    {/* 列表表头 - 固定不滚动 */}
-                                    <div 
-                                        className="variable-list-header"
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 12,
-                                            padding: '0 8px 8px 8px',
-                                            fontSize: '12px',
-                                            color: 'var(--text)',
-                                            opacity: 0.6,
-                                            fontWeight: 600,
-                                            flexShrink: 0, // 禁止压缩，跟随标题固定
-                                        }}
-                                    >
-                                        <div style={{ width: '50px', textAlign: 'center' }}>持久化</div>
-                                        <div style={{ width: '80px', textAlign: 'center' }}>变量类型</div>
-                                        <div style={{ width: '140px', textAlign: 'center' }}>变量名</div>
-                                        <div style={{ width: '200px', textAlign: 'center' }}>变量值</div>
-                                        <div style={{ width: '85px', textAlign: 'center' }}>操作</div>
-                                    </div>
-
-                                    {/* 变量列表容器 - 独立滚动区域 */}
-                                    <div 
-                                        className="variable-list custom-scroll"
-                                        style={{
-                                            flex: 1, // 核心：自动占满剩余全部高度
-                                            overflowY: 'auto', // 仅此处滚动，表头和按钮不动
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 8,
-                                            paddingRight: 4,
-                                            paddingBottom: 8,
-                                        }}
-                                    >
-                                        {(draftProjectState?.variables || []).length === 0 ? (
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                height: '120px',
-                                                fontSize: '14px',
-                                                opacity: 0.5,
-                                                color: 'var(--text)'
-                                            }}>
-                                                暂无自定义变量，点击下方按钮添加
-                                            </div>
-                                        ) : (
-                                            (draftProjectState?.variables || []).map((variable) => (
-                                                <VariableRow
-                                                    key={variable.id}
-                                                    variable={variable}
-                                                    theme={theme}
-                                                    onUpdate={handleDraftUpdateVariable}
-                                                    onDelete={handleDraftDeleteVariable}
-                                                />
-                                            ))
-                                        )}
-                                    </div>
-
-                                    {/* 底部添加按钮 - 永久固定在底部，不随列表滚动 */}
-                                    <button
-                                        onClick={handleDraftAddVariable}
-                                        style={{
-                                            width: '100%',
-                                            flexShrink: 0, // 禁止压缩，永久固定在底部
-                                            marginTop: '8px'
-                                        }}
-                                    >
-                                        + 添加自定义变量
-                                    </button>
-                                </div>
+                                <VariablesConfigScreen
+                                    theme={theme}
+                                    draftProjectState={draftProjectState}
+                                    setDraftProjectState={setDraftProjectState}
+                                />
                             )}
 
+                            {/* 角色定义 */}
                             {settingsTab === "character" && (
-                                <div className="settings-section" style={{ 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    height: '100%',
-                                    gap: '16px',
-                                    padding: 0,
-                                }}>
-                                    {/* 标题区域 - 固定不滚动，与其他界面风格统一 */}
-                                    <div style={{ 
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        paddingTop: 1,
-                                        paddingBottom: 7,
-                                        borderBottom: `1px solid ${theme === "dark" ? "#444" : "#DDD"}`,
-                                        flexShrink: 0,
-                                    }}>
-                                        <h3 style={{ margin: 0 }}>角色定义</h3>
-                                        {/* 标题右侧：全局批量颜色设置，效仿代码编辑器界面 */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                <label>浅色：</label>
-                                                <input 
-                                                    type="color"
-                                                    value={ draftProfile.characterColorLight }
-                                                    onChange={(e) => {
-                                                        if (!draftProfile) return;
-                                                        setDraftProfile(prev => prev ? {
-                                                            ...prev,
-                                                            characterColorLight: e.target.value,
-                                                        } : null);
-                                                    }}
-                                                />
-                                            </div>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                                <label>深色：</label>
-                                                <input 
-                                                    type="color"
-                                                    value={ draftProfile.characterColorDark }
-                                                    onChange={(e) => {
-                                                        if (!draftProfile) return;
-                                                        setDraftProfile(prev => prev ? {
-                                                            ...prev,
-                                                            characterColorDark: e.target.value,
-                                                        } : null);
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* 角色卡片网格 */}
-                                    <div 
-                                        className="custom-scroll"
-                                        style={{
-                                            flex: 1,
-                                            overflowY: 'auto',
-                                            display: 'grid',
-                                            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                                            gap: '16px',
-                                            paddingRight: 4,
-                                            paddingBottom: 8,
-                                            alignContent: 'start',
-                                        }}
-                                    >
-                                        {/* 空状态提示 */}
-                                        {(draftProfile?.characters || []).length === 0 ? (
-                                            <div style={{
-                                                gridColumn: '1 / -1',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                height: '120px',
-                                                fontSize: '14px',
-                                                opacity: 0.5,
-                                                color: 'var(--text)'
-                                            }}>
-                                                暂无角色定义，点击下方按钮添加
-                                            </div>
-                                        ) : (
-                                            // 角色卡片循环
-                                            (draftProfile?.characters || []).map((character) => (
-                                                <div
-                                                    key={character.id}
-                                                    className="character-card"
-                                                    style={{
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: '12px',
-                                                        padding: '16px',
-                                                        background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                                        border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
-                                                        borderRadius: '8px',
-                                                        flexShrink: 0,
-                                                        position: 'relative',
-                                                    }}
-                                                >
-                                                    {/* 角色中文名输入框 */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                        <label style={{ fontSize: '12px', color: '#888' }}>角色中文名</label>
-                                                        <input
-                                                            type="text"
-                                                            value={character.nameCN}
-                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'nameCN', e.target.value)}
-                                                            placeholder="输入角色中文名"
-                                                            className="textarea-styled"
-                                                            style={{
-                                                                padding: '8px 10px',
-                                                                width: '100%',
-                                                                boxSizing: 'border-box',
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* 常量名输入框 */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                        <label style={{ fontSize: '12px', color: '#888' }}>常量名（代码中使用）</label>
-                                                        <input
-                                                            type="text"
-                                                            value={character.constantName}
-                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'constantName', e.target.value)}
-                                                            placeholder="输入常量名称"
-                                                            className="textarea-styled"
-                                                            style={{
-                                                                padding: '8px 10px',
-                                                                width: '100%',
-                                                                boxSizing: 'border-box',
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* 固定高度多行备注输入框 */}
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-                                                        <label style={{ fontSize: '12px', color: '#888' }}>备注</label>
-                                                        <textarea
-                                                            rows={4}
-                                                            value={character.remark}
-                                                            onChange={(e) => handleDraftUpdateCharacter(character.id, 'remark', e.target.value)}
-                                                            placeholder="输入角色备注信息"
-                                                            className="custom-scroll"
-                                                            style={{
-                                                                padding: '8px 10px',
-                                                                width: '100%',
-                                                                resize: 'none', // 固定高度，禁止拉伸
-                                                                minHeight: '80px',
-                                                                boxSizing: 'border-box',
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    <button
-                                                        onClick={() => handleDraftDeleteCharacter(character.id)}
-                                                        style={{
-                                                            background: '#f04747',
-                                                            maxWidth: 60,
-                                                            margin: "auto",
-                                                        }}
-                                                        title="删除角色"
-                                                    >
-                                                        删除
-                                                    </button>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-
-                                    {/* 底部固定：占满全宽的添加角色按钮 */}
-                                    <button
-                                        onClick={handleDraftAddCharacter}
-                                        style={{
-                                        }}
-                                    >
-                                        + 添加角色
-                                    </button>
-                                </div>
+                                <CharacterScreen
+                                    theme={theme}
+                                    draftProfile={draftProfile}
+                                    setDraftProfile={setDraftProfile}
+                                />
                             )}
 
-                            {/* 2. 代码编辑器设置标签 */}
+                            {/* 代码编辑器 */}
                             {settingsTab === 'editor' && (
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    height: '100%', // 强制占满右侧设置区的全部高度
-                                    gap: "13px",
-                                }}>
-                                    {/* 头部标题+操作按钮 固定不滚动 */}
-                                    <div id="config"
-                                        style={{
-                                            borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
-                                            flexShrink: 0, // 禁止压缩
-                                            marginTop: 2 
-                                        }}>
-                                        <h3 style={{ margin: 0, marginTop: 6  }}>代码编辑器</h3>
-                                        {/* 右对齐的按钮容器 */}
-                                        <div style={{ display: "flex", gap: 10, marginTop: 0 }}>
-                                            {/* 隐藏的真实输入框 */}
-                                            <input
-                                                type="file" ref={fileInputRef}
-                                                style={{ display: "none" }}
-                                                accept=".txt" onChange={handleImport}
-                                            />
-                                            <button
-                                                onClick={async () => {
-                                                    const ipc = getIpcRenderer();
-                                                    if (!ipc) return;
-                                                    const result = await ipc.invoke("editor:default-profile") as number;
-                                                    if (result > 0) {
-                                                        setCodeProfile(defaultProfile);
-                                                    }
-                                                }}
-                                                className="secondary-button imp-exp-button"
-                                            >
-                                                恢复默认配置
-                                            </button>
-                                            {/* 导入按钮 */}
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="secondary-button imp-exp-button"
-                                            >
-                                                导入配置
-                                            </button>
-                                            {/* 导出按钮 */}
-                                            <button
-                                                onClick={handleExport}
-                                                className="secondary-button imp-exp-button"
-                                            >
-                                                导出配置
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* 字体设置 固定不滚动 */}
-                                    <div style={{
-                                        display: "flex",
-                                        alignItems: 'center',
-                                        borderBottom: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
-                                        paddingBottom: 15,
-                                        flexShrink: 0, // 禁止压缩
-                                        gap: 12
-                                    }}>
-                                        <label
-                                            style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
-                                        >
-                                            字体系列：
-                                        </label>
-                                        <input
-                                            className="textarea-styled"
-                                            style={{ flex: 1, padding: 8 }}
-                                            value={draftProfile.fontFamily}
-                                            onChange={e => setDraftProfile({ ...draftProfile, fontFamily: e.target.value })}
-                                        />
-                                        <label
-                                            style={{ marginBottom: 0, whiteSpace: 'nowrap' }}
-                                        >
-                                            大小：
-                                        </label>
-                                        <input
-                                            type="number"
-                                            className="textarea-styled"
-                                            style={{ width: 80, padding: 8 }}
-                                            value={draftProfile.fontSize}
-                                            onChange={e => setDraftProfile({ ...draftProfile, fontSize: Number(e.target.value) })}
-                                        />
-                                    </div>
-
-                                    {/* 关键字分组标题 固定不滚动 */}
-                                    <h4 style={{ margin: 0, flexShrink: 0 }}>自定义高亮</h4>
-
-                                    {/* 分组列表 自适应占满剩余空间，仅此处滚动 */}
-                                    <div style={{
-                                        borderRadius: 8,
-                                        flex: 1, // 核心：自动占满剩余高度
-                                        overflowY: "auto",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: 16,
-                                        color: "var(--text)"
-                                    }} className="custom-scroll">
-                                        {draftProfile.keywordGroups?.map((group, index) => (
-                                            <GroupEditor
-                                                key={group.id}
-                                                group={group}
-                                                theme={theme}
-                                                onChange={(updatedGroup) => {
-                                                    const newGroups = [...draftProfile.keywordGroups];
-                                                    newGroups[index] = updatedGroup;
-                                                    setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
-                                                }}
-                                                onDelete={() => {
-                                                    const newGroups = draftProfile.keywordGroups.filter((_, i) => i !== index);
-                                                    setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-
-                                    {/* 添加按钮 固定在底部，永远不随内容滚动、不随窗口大小偏移 */}
-                                    <button
-                                        onClick={() => {
-                                            const newGroups = [
-                                                ...draftProfile.keywordGroups,
-                                                {
-                                                    id: Date.now().toString(),
-                                                    name: "新分组", type: "function" as KeywordType,
-                                                    colorDark: "#ffffff", colorLight: "#000000",
-                                                    keywords: []
-                                                }
-                                            ];
-                                            setDraftProfile({ ...draftProfile, keywordGroups: newGroups });
-                                        }}
-                                        style={{ flexShrink: 0, marginTop: 8 }}
-                                    >
-                                        + 添加关键字分组
-                                    </button>
-                                </div>
+                                <CodeConfigScreen
+                                    theme={theme}
+                                    fileInputRef={fileInputRef}
+                                    draftProfile={draftProfile}
+                                    handleImport={handleImport}
+                                    handleExport={handleExport}
+                                    setCodeProfile={setCodeProfile}
+                                    setDraftProfile={setDraftProfile}
+                                />
                             )}
 
-                            {/* 3. 关于标签 */}
+                            {/* 关于 */}
                             {settingsTab === 'about' && (
-                                <div className="settings-section">
-                                    <h3>关于</h3>
-                                    <div className="settings-section" style={{ 
-                                        display: 'flex', 
-                                        flexDirection: 'column', 
-                                        alignItems: 'center', 
-                                        textAlign: 'center',
-                                        justifyContent: 'center', // 垂直居中
-                                        padding: '20px 0'
-                                    }}>
-                                        {/* 1. 软件大标题 */}
-                                        <h2 style={{ 
-                                            margin: 0, 
-                                            fontSize: '28px', 
-                                            fontWeight: 800,
-                                            background: theme === 'dark' 
-                                                ? 'linear-gradient(135deg, #fff 0%, #aaa 100%)' 
-                                                : 'linear-gradient(135deg, #1f2937 0%, #4b5563 100%)',
-                                            WebkitBackgroundClip: 'text',
-                                            WebkitTextFillColor: 'transparent',
-                                            backgroundClip: 'text'
-                                        }}>
-                                            对话编辑器
-                                        </h2>
-                                        
-                                        {/* 2. 版本号 */}
-                                        <p style={{ 
-                                            margin: '8px 0 24px 0', 
-                                            fontSize: '14px', 
-                                            opacity: 0.6,
-                                            letterSpacing: '1px'
-                                        }}>
-                                            版本 1.0.0
-                                        </p>
-
-                                        {/* 3. 分割线 */}
-                                        <div style={{ 
-                                            width: '40px', 
-                                            height: '3px', 
-                                            background: 'var(--accent)', 
-                                            borderRadius: '999px',
-                                            marginBottom: '24px'
-                                        }} />
-
-                                        {/* 4. 作者与描述 */}
-                                        <div style={{ maxWidth: '420px', marginBottom: '32px' }}>
-                                            <p style={{ margin: '0 0 12px 0', fontWeight: 600, fontSize: '15px' }}>
-                                                作者：Lequ
-                                            </p>
-                                            <p style={{ 
-                                                margin: 0, 
-                                                fontSize: '14px', 
-                                                lineHeight: '1.7', 
-                                                opacity: 0.85
-                                            }}>
-                                                本程序专为游戏 <span style={{ fontWeight: 600, opacity: 1 }}>I want Nature</span> 设计，
-                                                用于通过有向图可视化编辑对话走向，并编译导出对应的 GML 代码逻辑。
-                                            </p>
-                                        </div>
-
-                                        {/* 5. 技术栈标题 */}
-                                        <p style={{ 
-                                            margin: '0 0 16px 0', 
-                                            fontSize: '12px', 
-                                            textTransform: 'uppercase', 
-                                            letterSpacing: '2px',
-                                            opacity: 0.5
-                                        }}>
-                                            Powered by
-                                        </p>
-
-                                        {/* 6. 技术栈图标墙 (横向排列) */}
-                                        <div style={{ 
-                                            display: 'flex', 
-                                            justifyContent: 'center', 
-                                            alignItems: 'flex-start',
-                                            gap: '32px', // 图标之间的间距
-                                            flexWrap: 'wrap'
-                                        }}>
-                                            {/* Electron */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ 
-                                                    width: '64px', 
-                                                    height: '64px', 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center',
-                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                                                    borderRadius: '12px',
-                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
-                                                }}>
-                                                    <img 
-                                                        src="src/resources/electron.svg" 
-                                                        alt="Electron" 
-                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
-                                                    />
-                                                </div>
-                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>Electron</span>
-                                            </div>
-
-                                            {/* React */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ 
-                                                    width: '64px', 
-                                                    height: '64px', 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center',
-                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                                                    borderRadius: '12px',
-                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
-                                                }}>
-                                                    <img 
-                                                        src={`src/resources/react_${theme === "light" ? "light" : "dark" }.svg`} 
-                                                        alt="React" 
-                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
-                                                    />
-                                                </div>
-                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>React</span>
-                                            </div>
-
-                                            {/* Vite */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                                <div style={{ 
-                                                    width: '64px', 
-                                                    height: '64px', 
-                                                    display: 'flex', 
-                                                    alignItems: 'center', 
-                                                    justifyContent: 'center',
-                                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                                                    borderRadius: '12px',
-                                                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`
-                                                }}>
-                                                    <img 
-                                                        src={`src/resources/vite_${theme === "light" ? "light" : "dark" }.svg`} 
-                                                        alt="Vite" 
-                                                        style={{ width: '32px', height: '32px', objectFit: 'contain' }}
-                                                    />
-                                                </div>
-                                                <span style={{ fontSize: '13px', fontWeight: 500 }}>Vite</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                )}
+                                <AboutScreen theme={theme} />
+                            )}
                         </div>
                     </div>
-                </div>) : null}
+                </div>
+            )}
         </>
     );
 }
-
-// 设置面板内部组件，用于处理单个分组，解决空格 Bug
-function GroupEditor({ group, theme, onChange, onDelete }: {
-    group: KeywordGroup;
-    theme: "dark" | "light";
-    onChange: (g: KeywordGroup) => void;
-    onDelete: () => void;
-}) {
-    // 使用本地 state 维护关键字字符串，解决空格输入时由于重绘导致光标和空格丢失的问题
-    const [rawKeywords, setRawKeywords] = useState(group.keywords.join(" "));
-
-    useEffect(() => {
-        // 比较当前输入框的单词，和外部 (group.keywords) 的单词是否一致
-        const currentArr = rawKeywords.split(/\s+/).filter(Boolean);
-        const isSame = currentArr.length === group.keywords.length &&
-            currentArr.every((k, i) => k === group.keywords[i]);
-
-        // 只有当真正不一致时（即触发了导入配置），才强制覆盖文本框内容
-        // 这样既能实现导入后自动刷新，又不会在正常打字时吃掉结尾的空格
-        if (!isSame) {
-            setRawKeywords(group.keywords.join(" "));
-        }
-    }, [group.keywords, rawKeywords]);
-
-    const handleTextChange = (val: string) => {
-        setRawKeywords(val); // 保持输入框原始状态，允许尾随空格
-
-        // 过滤出干净的单词数组存入配置，防止出现空字符串高亮报错
-        const keywordsArray = val.split(/\s+/).filter(Boolean);
-        onChange({ ...group, keywords: keywordsArray });
-    };
-
-    return (
-        <div className="variable-row" style={{
-            border: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
-            borderRadius: 8, padding: 12, marginBottom: 12
-        }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                <select
-                    onChange={e => onChange({ ...group, type: e.target.value as KeywordType })}
-                    value={group.type}
-                >
-                    <option value="function">函数</option>
-                    <option value="variable">变量</option>
-                    <option value="keyword">关键字</option>
-                    <option value="constant">常量</option>
-                </select>
-                <input
-                    placeholder="分组名称"
-                    className="textarea-styled"
-                    style={{ flex: 1, padding: 8, width: "50%" }}
-                    value={group.name}
-                    onChange={e => onChange({ ...group, name: e.target.value })}
-                />
-                <button
-                    style={{ background: "#ed4245" }}
-                    onClick={onDelete}
-                >
-                    删除
-                </button>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <label>浅色：</label>
-                    <input type="color"
-                        value={group.colorLight}
-                        onChange={e => onChange({ ...group, colorLight: e.target.value })}
-                    />
-                </div>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <label>深色：</label>
-                    <input type="color"
-                        value={group.colorDark}
-                        onChange={e => onChange({ ...group, colorDark: e.target.value })}
-                    />
-                </div>
-            </div>
-            <textarea
-                rows={4}
-                className="custom-scroll"
-                style={{ width: "97%" }}
-                placeholder="在此输入关键字，并使用空格分隔不同的关键字。"
-                value={rawKeywords}
-                onChange={e => handleTextChange(e.target.value)}
-                spellCheck="false"
-            />
-        </div>
-    );
-}
-
-const VariableRow = React.memo(({
-    variable,
-    theme,
-    onUpdate,
-    onDelete
-}: {
-    variable: CustomVariable;
-    theme: "dark" | "light";
-    onUpdate: (id: string, key: keyof CustomVariable, value: any) => void;
-    onDelete: (id: string) => void;
-}) => {
-    // 本地临时状态缓存输入值，仅失焦时同步到父级，避免高频更新
-    const [tempName, setTempName] = useState(variable.name);
-    const [tempValue, setTempValue] = useState(String(variable.value));
-
-    // 当外部变量数据变化时（如类型切换、重置草稿），同步更新本地状态
-    useEffect(() => {
-        setTempName(variable.name);
-        setTempValue(String(variable.value));
-    }, [variable.name, variable.value]);
-
-    // 类型切换处理（保留原有自动转换逻辑）
-    const handleTypeChange = (newType: "number" | "string") => {
-        onUpdate(variable.id, "type", newType);
-    };
-
-    return (
-        <div
-            className="variable-row"
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '10px 12px',
-                border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
-                borderRadius: '8px',
-                flexShrink: 0,
-            }}
-        >
-            {/* 1. 持久化勾选框 */}
-            <div style={{ width: '40px', display: 'flex', justifyContent: 'center' }}>
-                <input
-                    type="checkbox"
-                    checked={variable.persistent}
-                    onChange={(e) => onUpdate(variable.id, 'persistent', e.target.checked)}
-                    style={{
-                        width: '16px',
-                        height: '16px',
-                        cursor: 'pointer',
-                        accentColor: 'var(--accent)'
-                    }}
-                />
-            </div>
-
-            {/* 2. 变量类型下拉框 */}
-            <div style={{ width: '90px' }}>
-                <select
-                    value={variable.type}
-                    onChange={(e) => handleTypeChange(e.target.value as "number" | "string")}
-                    style={{ width: '100%', margin: 0 }}
-                >
-                    <option value="number">实数</option>
-                    <option value="string">字符串</option>
-                </select>
-            </div>
-
-            {/* 3. 变量名输入框（同样修复输入卡顿问题） */}
-            <div style={{ flex: 1, marginRight: 0 }}>
-                <input
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    onBlur={() => onUpdate(variable.id, 'name', tempName.trim())}
-                    placeholder="输入变量名"
-                    className="textarea-styled"
-                    style={{
-                        maxWidth: '120px',
-                        padding: '8px 10px',
-                    }}
-                />
-            </div>
-
-            {/* 4. 变量值输入框（核心修复） */}
-            <div style={{ flex: 1.6 }}>
-                <input
-                    type="text"
-                    value={tempValue}
-                    onChange={(e) => setTempValue(e.target.value)}
-                    // 仅失焦时做类型转换+同步到父级，不打断输入
-                    onBlur={() => {
-                        let finalValue: string | number = tempValue;
-                        // 数字类型格式化处理
-                        if (variable.type === "number") {
-                            const num = Number(tempValue);
-                            finalValue = isNaN(num) ? 0 : num;
-                            setTempValue(String(finalValue));
-                        }
-                        onUpdate(variable.id, 'value', finalValue);
-                    }}
-                    placeholder="输入变量值"
-                    className="textarea-styled"
-                    style={{
-                        maxWidth: '300px',
-                        padding: '8px 10px',
-                    }}
-                />
-            </div>
-
-            {/* 5. 删除按钮 */}
-            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-                <button
-                    onClick={() => onDelete(variable.id)}
-                    style={{
-                        padding: '6px 10px',
-                        background: '#f04747',
-                    }}
-                >
-                    删除
-                </button>
-            </div>
-        </div>
-    );
-});
-
-// 仅当当前变量数据变化时才触发重渲染
-VariableRow.displayName = "VariableRow";
 
 declare global {
     interface Window {

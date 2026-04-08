@@ -37,7 +37,7 @@ export type CodeStyleProfile = {
     keywordGroups: KeywordGroup[]; 
 };
 
-interface CodeEditorProps {
+export interface CodeEditorProps {
     value: string;
     onChange: (val: string) => void;
     theme?: "light" | "dark";

@@ -1,0 +1,175 @@
+/* 画布容器 */
+#viewport {
+    position: absolute;
+    inset: 0;
+    cursor: grab;
+    overflow: hidden;
+}
+
+#viewport:active {
+    cursor: grabbing;
+}
+
+#content-layer {
+    position: absolute;
+    transform-origin: 0 0;
+    width: 10000px;
+    height: 10000px;
+}
+
+/* 点阵背景 */
+#viewport {
+    position: absolute;
+    inset: 0;
+    cursor: grab;
+    overflow: hidden;
+}
+
+#viewport::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: calc(40px * var(--view-zoom, 1)) calc(40px * var(--view-zoom, 1));
+    background-position: calc(var(--view-x, 0) * 1px) calc(var(--view-y, 0) * 1px);
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;
+}
+
+#line-canvas {
+    z-index: 6;
+}
+
+/* 缩略图 */
+#minimap {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 180px;
+    height: 130px;
+    background: var(--minimap-bg);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 75%, transparent);
+    z-index: 2000;
+    box-shadow: var(--shadow-strong);
+    overflow: hidden;
+    backdrop-filter: blur(3px);
+}
+
+#minimap-canvas {
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    z-index: 1;
+}
+
+#minimap-view {
+    position: absolute;
+    border: 1px solid var(--accent);
+    background: rgba(114, 137, 218, 0.1);
+    pointer-events: none;
+    z-index: 9;
+}
+
+#minimap-zoom {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    right: 8px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* 工具栏 */
+#toolbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    background: color-mix(in srgb, var(--panel) 75%, transparent);
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    gap: 10px;
+    z-index: 1000;
+    border-bottom: 1px solid var(--panel-border);
+    box-shadow: var(--shadow-strong);
+    backdrop-filter: blur(3px);
+}
+
+.file-menu {
+    position: relative;
+}
+
+.file-menu-button {
+    background: color-mix(in srgb, var(--panel) 92%, var(--accent));
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 85%, transparent);
+    background: color-mix(in srgb, var(--panel) 96%, var(--accent));
+    box-shadow: none;
+    transition: background 0.2s;
+}
+
+.file-menu-button:hover {
+    filter: brightness(var(--secondary-button-cover));
+}
+
+.file-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 120px;
+    background: var(--panel);
+    border-radius: 8px;
+    box-shadow: var(--shadow-strong);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    padding: 4px;
+    display: none;
+    z-index: 1500;
+}
+
+.file-menu.open .file-menu-dropdown {
+    display: block;
+}
+
+.file-menu-dropdown button {
+    width: 100%;
+    justify-content: flex-start;
+    box-shadow: none;
+    border-radius: 6px;
+    font-weight: 500;
+    background: transparent;
+    color: var(--text);
+    padding: 8px 10px;
+    transition: background 0.2s;
+}
+
+.file-menu-dropdown button:hover {
+    background: var(--subtle-bg);
+    filter: none;
+}
+
+.file-menu-dropdown button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+:root[data-theme="light"] .file-menu-button {
+    background: color-mix(in srgb, var(--panel) 92%, #e2e8f0);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 90%, transparent);
+}

@@ -1,0 +1,149 @@
+/* 节点样式 */
+.node {
+    position: absolute;
+    width: 260px;
+    background: var(--node-bg);
+    border: 2px solid color-mix(in srgb, var(--accent) 45%, #8b95a7);
+    border-radius: 8px;
+    z-index: 10;
+    box-shadow: var(--shadow-strong);
+    pointer-events: auto;
+}
+
+.start-node {
+    border-radius: 100px;
+    width: 120px;
+}
+
+.node-header {
+    padding: 8px;
+    background: var(--subtle-bg);
+    font-size: 11px;
+    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
+}
+
+.start-node-header {
+    font-size: 13px;
+    border-bottom: none;
+    text-align: center;
+    display: block;
+}
+
+.node-body {
+    padding: 12px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.4;
+    max-height: 400px;
+    overflow: hidden;
+}
+
+.node-footer {
+    padding: 6px;
+    display: flex;
+    justify-content: space-between;
+    background: var(--subtle-bg);
+}
+
+.start-node-footer {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-left: 20px;
+    padding-right: 14px;
+}
+
+.port {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: var(--secondary-button);
+    cursor: crosshair;
+    border: none;
+    color: var(--secondary-button-text);
+}
+
+.port:hover {
+    filter: brightness(var(--secondary-button-cover));
+}
+
+.port.connected {
+    background: #43b581;
+    color: white;
+}
+
+.port.connected.FALSE {
+    background: #b54343;
+}
+
+/* 注释框 */
+.comment-box {
+    position: absolute;
+    border: 2px dashed color-mix(in srgb, var(--accent) 45%, #9aa6bd);
+    background: color-mix(in srgb, var(--panel) 90%, transparent);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.comment-handle {
+    position: absolute;
+    top: -28px;
+    left: 0;
+    background: color-mix(in srgb, var(--panel) 75%, var(--accent));
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px 4px 0 0;
+    cursor: move;
+    pointer-events: auto;
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, #7e899d);
+    border-bottom: none;
+}
+
+.comment-resizer {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 15px;
+    height: 15px;
+    cursor: se-resize;
+    pointer-events: auto;
+    background: linear-gradient(135deg, transparent 50%, #666 50%);
+}
+
+/* 下面一排的颜色选择 */
+.color-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.preset-color-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.preset-color {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    padding: 0;
+    box-shadow: none;
+}
+
+.preset-color.active {
+    border-color: #111827;
+    transform: scale(1.05);
+}
+
+:root[data-theme="light"] .preset-color.active {
+    border-color: #0f172a;
+}

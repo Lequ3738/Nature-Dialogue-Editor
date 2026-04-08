@@ -56,7 +56,17 @@ export interface Resizing {
     startH: number;
 }
 
-export interface EditorState {
+export interface ProjectData {
+    title: string;
+    author: string;
+    version: string;
+    description: string;
+    forbiddenExpression: string;
+    
+    variables: CustomVariable[];
+}
+
+export interface EditorState extends ProjectData {
     nodes: Node[];
     edges: Edge[];
     comments: CommentBox[];
@@ -67,14 +77,6 @@ export interface EditorState {
     dragTarget: DragTarget | null;
     connecting: Connecting | null;
     resizing: Resizing | null;
-
-    title: string,
-    description: string,
-    author: string,
-    version: string,
-    forbiddenExpression: string,
-
-    variables: CustomVariable[],
 }
 
 export function createInitialState(): EditorState {

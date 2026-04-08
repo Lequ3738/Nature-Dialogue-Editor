@@ -1,0 +1,145 @@
+/*
+ * 一些按钮的样式
+*/
+button, .button_styled {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 13px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: background 0.2s;
+}
+
+.secondary-button {
+    background: var(--secondary-button);
+    color: var(--secondary-button-text);
+}
+
+button:hover {
+    filter: brightness(1.1);
+}
+
+.secondary-button:hover {
+    filter: brightness(var(--secondary-button-cover));
+}
+
+.file-label {
+    background: color-mix(in srgb, var(--panel) 86%, var(--accent));
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.theme-toggle {
+    min-width: 36px;
+    width: 36px;
+    height: 32px;
+    /*background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #fff));*/
+    padding: 0;
+    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.imp-exp-button {
+    padding: 6px 12px;
+}
+
+/*
+ * 输入框样式
+*/
+textarea,
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"] {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.lang-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+textarea, .textarea-styled {
+    background: color-mix(in srgb, var(--panel) 88%, #d3dbe8);
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    padding: 10px;
+    border-radius: 5px;
+    font-family: 'Consolas', '微软雅黑', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+input[type="color"] {
+    background: none;
+    border: none;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+}
+
+textarea, input {
+    transition: all 0.2s ease;
+}
+
+/* 下拉菜单栏样式 */
+
+select {
+    appearance: none; /* 移除原生箭头 */
+    background-color: var(--select);
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
+    border-radius: 6px;
+    padding: 8px 32px 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+    
+    /* 自定义箭头：使用简洁的 Chevron 图标 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23888888'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 14px;
+    
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 悬停状态 */
+select:hover {
+    background-color: color-mix(in srgb, var(--panel) 95%, var(--accent));
+    border-color: color-mix(in srgb, var(--panel-border) 60%, transparent);
+}
+
+/* 聚焦状态 */
+select:focus, textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* 下拉菜单选项 */
+select option {
+    background-color: var(--panel);
+    color: var(--text);
+    padding: 10px;
+}
+
+/* 禁用状态 */
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}

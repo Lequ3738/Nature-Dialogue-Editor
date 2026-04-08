@@ -3,31 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <title>对话编辑器</title>
-    <link href="index.css" rel="stylesheet">
+
+    <link href="/src/css/variables.css" rel="stylesheet">
+    <link href="/src/css/layout.css" rel="stylesheet">
+    <link href="/src/css/node.css" rel="stylesheet">
+    <link href="/src/css/scrollbar.css" rel="stylesheet">
+    <link href="/src/css/form.css" rel="stylesheet">
+    <link href="/src/css/config.css" rel="stylesheet">
 </head>
 <body>
-<div id="root">
-
-<div id="toolbar">
-</div>
-
-<div id="viewport">
-    <div id="content-layer">
-        <canvas id="line-canvas"></canvas>
-        <div id="objects-container"></div>
+    <div id="root">
     </div>
-</div>
-
-<div id="minimap">
-    <canvas id="minimap-canvas"></canvas>
-    <div id="minimap-view"></div>
-</div>
-
-<div id="modal-overlay">
-    <div id="modal">
-    </div>
-</div>
-</div>
-<script type="module" src="/src/renderer/main.tsx"></script>
+    <script type="module" src="/src/renderer/main.tsx"></script>
 </body>
 </html>
