@@ -1,226 +1,351 @@
 import React, { useEffect, useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import {
-    Decoration,
-    EditorView,
-    ViewPlugin,
-    type DecorationSet,
-    type ViewUpdate,
+    Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
-import { javascript } from "@codemirror/lang-javascript";
-import { syntaxTree } from "@codemirror/language";
+import {
+    HighlightStyle, syntaxHighlighting, syntaxTree, indentUnit
+} from "@codemirror/language";
+import {
+    autocompletion, type CompletionContext
+} from "@codemirror/autocomplete";
+import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
+import { tags as t } from "@lezer/highlight";
+import { Character } from "./editorTypes";
 
-export type HighlightRule = {
-    pattern: string;
-    color: string;
+export type KeywordType = "function" | "variable" | "keyword" | "constant";
+
+export type KeywordGroup = {
+    id: string;
+    name: string;        // 分组名，如 "内置函数", "自定义宏"
+    type: KeywordType;   // 类型，如 "function", "macro"，可用于补全时的图标区分
+    colorLight: string;  // 浅色模式颜色
+    colorDark: string;   // 深色模式颜色
+    keywords: string[];  // 具体的关键字列表
 };
 
 export type CodeStyleProfile = {
     name: string;
     fontFamily: string;
     fontSize: number;
-    rules: HighlightRule[];
-    functionColor: string;
+
+    characterColorLight: string;
+    characterColorDark: string;
+    characters: Character[];
+
+    keywordGroups: KeywordGroup[]; 
 };
 
-/**
- * 轻量代码编辑器封装（CodeMirror 6）：
- * - 行号
- * - 基础 JS 语法支持（@codemirror/lang-javascript）
- * - 用户自定义关键字高亮（pattern -> color）
- * - 函数名自动识别高亮（基于语法树）
- *
- * 注意：这里的“用户关键字高亮”不是完整语法高亮，只是便于用户快速标记自定义词汇。
- * 真正语法高亮仍由 CodeMirror 的语言包提供（我们只叠加装饰）。
- */
-/**
- * 这里用“词边界 + 用户定义关键字列表”的方式做轻量高亮。
- * 优点：实现简单、可由用户直接配置；缺点：不是完整语法高亮。
- */
-function escapeRegExp(s: string) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function buildRuleRegex(rules: HighlightRule[]) {
-    const parts = rules
-        .map((r) => r.pattern?.trim())
-        .filter(Boolean)
-        .map((p) => escapeRegExp(p));
-    if (!parts.length) return null;
-    return new RegExp(`\\b(?:${parts.join("|")})\\b`, "g");
-}
-
-export default function CodeEditor(props: {
+export interface CodeEditorProps {
     value: string;
-    onChange: (next: string) => void;
+    onChange: (val: string) => void;
+    theme?: "light" | "dark";
     profile: CodeStyleProfile;
-    theme: "dark" | "light";
     height?: number;
-}) {
-    const { value, onChange, profile, theme, height = 160 } = props;
+}
 
+export default function CodeEditor(
+    { value, onChange, theme = "dark", profile, height = 300 }: 
+    CodeEditorProps
+) {
     const [extensionsKey, setExtensionsKey] = useState(0);
+
     useEffect(() => {
         setExtensionsKey((k) => k + 1);
-    }, [profile, theme]);
+    }, [profile]);
 
-    const rules = profile.rules;
-    const regex = useMemo(() => buildRuleRegex(rules), [rules]);
-    const colorMap = useMemo(() => {
+    const rulesMap = useMemo(() => {
         const map = new Map<string, string>();
-        for (const r of rules) {
-            const k = r.pattern?.trim();
-            const c = r.color?.trim();
-            if (k && c) map.set(k, c);
-        }
+        
+        // 核心优先级逻辑：
+        // 1. 遍历分组。如果不同分组有相同关键字，后面的分组会 set 覆盖前面的，
+        //    因此最终 map 中保留的是“下面分组”的颜色。
+        // 2. 在着色插件中，我们会优先检查此 Map，从而覆盖内置 GML 颜色。
+        profile.keywordGroups.forEach(group => {
+            const color = theme === "light" ? group.colorLight : group.colorDark;
+            group.keywords.forEach(kw => {
+                const trimmed = kw.trim();
+                if (trimmed) {
+                    map.set(trimmed, color);
+                }
+            });
+        });
+
+        profile.characters.forEach(char => {
+            const color = theme === "light" ? 
+                profile.characterColorLight : profile.characterColorDark;
+            const trimmed = char.constantName.trim();
+            if (trimmed) map.set(trimmed, color);
+        });
+
         return map;
-    }, [rules]);
+    }, [profile.keywordGroups, profile.characters, theme]);
 
-    const highlightPlugin = useMemo(() => {
-        return ViewPlugin.fromClass(
-            class {
-                decorations: DecorationSet;
-                constructor(view: EditorView) {
-                    this.decorations = this.compute(view);
-                }
-                update(update: ViewUpdate) {
-                    if (update.docChanged || update.viewportChanged) {
-                        this.decorations = this.compute(update.view);
-                    }
-                }
-                compute(view: EditorView): DecorationSet {
-                    if ((!regex || !colorMap.size) && !profile.functionColor)
-                        return Decoration.none;
-                    const builder = new RangeSetBuilder<Decoration>();
-                    const text = view.state.doc.toString();
+    // 高亮插件逻辑
+    const highlightPlugin = useMemo(() => ViewPlugin.fromClass(class {
+        decorations: DecorationSet;
 
-                    // 1) 用户关键字高亮
-                    if (regex && colorMap.size) {
-                        let m: RegExpExecArray | null;
-                        const local = new RegExp(regex.source, "g");
-                        while ((m = local.exec(text))) {
-                            const match = m[0];
-                            const from = m.index;
-                            const to = from + match.length;
-                            const color = colorMap.get(match) ?? "#3b82f6";
-                            builder.add(
-                                from,
-                                to,
-                                Decoration.mark({
-                                    attributes: { style: `color: ${color}; font-weight: 650;` },
-                                })
-                            );
+        constructor(view: EditorView) {
+            this.decorations = this.buildDecorations(view);
+        }
+
+        update(update: ViewUpdate) {
+            if (update.docChanged || update.viewportChanged) {
+                this.decorations = this.buildDecorations(update.view);
+            }
+        }
+
+        buildDecorations(view: EditorView) {
+            const builder = new RangeSetBuilder<Decoration>();
+            
+            for (let { from, to } of view.visibleRanges) {
+                syntaxTree(view.state).iterate({
+                    from, to,
+                    enter: (node) => {
+                        // 核心：只拦截我们关心的词法节点类型
+                        const isWordNode = 
+                            node.name === "keyword" || 
+                            node.name === "variable" || 
+                            node.name === "constant" || 
+                            node.name === "function";
+                            
+                        if (isWordNode) {
+                            const text = view.state.sliceDoc(node.from, node.to);
+                            const color = rulesMap.get(text);
+                            
+                            if (color) {
+                                builder.add(
+                                    node.from, node.to,
+                                    Decoration.mark({
+                                        attributes: { style: 
+                                            `color: ${color} !important; ${
+                                            node.name === "keyword" ? 
+                                            "font-weight: bold;" : ""
+                                        }` }
+                                    })
+                                );
+                            }
                         }
                     }
-
-                    // 2) 函数名自动识别（基于语法树）：对函数声明/函数表达式/箭头函数的 name/变量名着色
-                    const funcColor = profile.functionColor?.trim();
-                    if (funcColor) {
-                        const tree = syntaxTree(view.state);
-                        tree.iterate({
-                            enter(node) {
-                                const t = node.type.name;
-                                // FunctionDeclaration: name 通常是 Identifier
-                                if (t === "FunctionDeclaration") {
-                                    // 向下找第一个 Identifier
-                                    const cur = node.node;
-                                    let found = false;
-                                    cur.firstChild && cur.firstChild;
-                                    cur.cursor().iterate((c) => {
-                                        if (found) return false;
-                                        if (c.type.name === "Identifier") {
-                                            builder.add(
-                                                c.from,
-                                                c.to,
-                                                Decoration.mark({
-                                                    attributes: {
-                                                        style: `color: ${funcColor}; font-weight: 650;`,
-                                                    },
-                                                })
-                                            );
-                                            found = true;
-                                            return false;
-                                        }
-                                        return undefined;
-                                    });
-                                }
-                                // VariableDefinition + ArrowFunction / FunctionExpression 的组合：标记变量名
-                                if (t === "VariableDefinition") {
-                                    const cur = node.node;
-                                    const first = cur.firstChild;
-                                    if (first && first.type.name === "Identifier") {
-                                        builder.add(
-                                            first.from,
-                                            first.to,
-                                            Decoration.mark({
-                                                attributes: {
-                                                    style: `color: ${funcColor}; font-weight: 650;`,
-                                                },
-                                            })
-                                        );
-                                    }
-                                }
-                            },
-                        });
-                    }
-
-                    return builder.finish();
-                }
-            },
-            {
-                decorations: (v) => v.decorations,
+                });
             }
-        );
-    }, [colorMap, profile.functionColor, regex]);
+            return builder.finish();
+        }
+    }, {
+        decorations: v => v.decorations
+    }) , [rulesMap]);
 
-    const themeExt = useMemo(
-        () =>
-            EditorView.theme({
-                "&": {
-                    fontFamily: profile.fontFamily,
-                    fontSize: `${profile.fontSize}px`,
-                    backgroundColor: theme === "light" ? "#ffffff" : "#111827",
-                    color: theme === "light" ? "#0f172a" : "#e5e7eb",
-                },
-                ".cm-gutters": {
-                    backgroundColor: theme === "light" ? "#f8fafc" : "rgba(255,255,255,0.04)",
-                    borderRight: "1px solid rgba(127, 127, 127, 0.25)",
-                },
-                ".cm-content": {
-                    caretColor: theme === "light" ? "#0f172a" : "#e5e7eb",
-                },
-            }),
-        [profile.fontFamily, profile.fontSize, theme]
-    );
+    const createEditorHighlightStyle = (theme: "light" | "dark") => {
+        const isDark = theme === "dark";
+        
+        return HighlightStyle.define([
+            { tag: t.keyword, color: isDark ? "#569CD6" : "#000080", fontWeight: "bold" },
+            { tag: t.string, color: isDark ? "#92CAF4" : "#0000FF" },
+            { tag: t.number, color: isDark ? "#B8D7A3" : "#0000FF" },
+            { tag: t.comment, color: isDark ? "#57A64A" : "#008000" },
+            { tag: t.operator, color: isDark ? "#C8C8C8" : "#606060" },
+            { tag: t.brace, color: isDark ? "#569CD6" : "#000080", fontWeight: "bold" },
+        ]);
+    };
+
+    // --- 3. 代码补全生成器 ---
+    const customAutocomplete = useMemo(() => {
+        return autocompletion({
+            override: [(context: CompletionContext) => {
+                // 在字符串/注释内部，不提供任何补全选项
+                const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
+                if (nodeBefore.name === "string" || nodeBefore.name === "blockComment" || 
+                    nodeBefore.name === "lineComment") {
+                    return null;
+                }
+
+                const word = context.matchBefore(/\w*/);
+                if (!word || (word.from === word.to && !context.explicit)) return null;
+
+                const options: any[] = [];
+                const addedLabels = new Set<string>(); // 用于去重记录
+
+                // 1. 添加内置关键字和常量
+                gmlKeywordList.forEach(k => {
+                    options.push({ label: k, type: "keyword", boost: 1 });
+                    addedLabels.add(k);
+                });
+                gmlBuiltinList.forEach(b => {
+                    options.push({ label: b, type: "constant" });
+                    addedLabels.add(b);
+                });
+
+                // 2. 添加用户自定义配置中的关键字
+                profile.keywordGroups.forEach(group => {
+                    group.keywords.forEach(key => {
+                        const trimmedKey = key.trim();
+                        if (trimmedKey) {
+                            options.push({
+                                label: trimmedKey,
+                                type: group.type || "variable",
+                                info: `[${group.name}]`,
+                                boost: 2
+                            });
+                            addedLabels.add(trimmedKey);
+                        }
+                    });
+                });
+
+                profile.characters.forEach(char => {
+                    const trimmedKey = char.constantName.trim();
+                    if (trimmedKey && !addedLabels.has(trimmedKey)) {
+                        options.push({
+                            label: trimmedKey,
+                            type: "constant",
+                            info: `[角色：${char.nameCN}]`,
+                            boost: 2
+                        });
+                        addedLabels.add(trimmedKey);
+                    }
+                });
+
+                // 从当前文档的语法树中提取“上下文变量”
+                syntaxTree(context.state).iterate({
+                    enter: (node) => {
+                        // 只提取被判定为“变量名”的节点
+                        if (node.name === "variable") {
+                            if (node.from <= context.pos && node.to >= context.pos) {
+                                return;
+                            }
+
+                            const text = context.state.sliceDoc(node.from, node.to);
+                            // 过滤掉已经加到列表里的内置函数或自定义关键字
+                            if (!addedLabels.has(text)) {
+                                addedLabels.add(text);
+                                options.push({
+                                    label: text,
+                                    type: "variable",
+                                    info: "(自定义变量)",
+                                    boost: 0 // 优先级最低，排在关键字下面
+                                });
+                            }
+                        }
+                    }
+                });
+
+                return {
+                    from: word.from,
+                    options: options,
+                    filter: true
+                };
+            }]
+        });
+    }, [profile.keywordGroups, profile.characters]);
+
+    const themeExt = useMemo(() => EditorView.theme({
+        // 编辑器根容器
+        "&": {
+            fontSize: `${profile.fontSize}px`,
+            height: `${height}px`,
+        },
+        // 滚动区域（决定了整个编辑框的背景色）
+        ".cm-scroller": {
+            fontFamily: profile.fontFamily, // 响应字体设置
+            backgroundColor: theme === "light" ? "#ffffff" : "#1E2024", // 响应背景色
+        },
+        // 内容区域（决定了代码文字的字体和颜色）
+        ".cm-content": {
+            fontFamily: profile.fontFamily,
+            color: theme === "light" ? "#0f172a" : "#e5e7eb",
+            caretColor: theme === "light" ? "#0f172a" : "#e5e7eb",
+        },
+        // 左侧行号区域
+        ".cm-gutters": {
+            fontFamily: profile.fontFamily,
+            backgroundColor: theme === "light" ? "#f8fafc" : "rgba(255,255,255,0.04)",
+            color: theme === "light" ? "#94a3b8" : "#6b7280",
+            borderRight: "1px solid rgba(127, 127, 127, 0.25)",
+        },
+        ".cm-gutterElement.cm-activeLineGutter": {
+            backgroundColor: theme === "light" ? "#e2e8f0" : "rgba(255, 255, 255, 0.08)",
+            color: theme === "light" ? "#0f172a" : "#ffffff",
+        },
+        ".cm-activeLine": {
+            backgroundColor: (theme === "light" ? "#3D597A20" : "#3D597A30") + " !important",
+        },
+        // 选中状态的背景色
+        ".cm-selectionBackground": {
+            backgroundColor: (theme === "light" ? "#ADD6FF" : "#264F78") + " !important",
+        },
+
+        ".cm-tooltip": {
+            backgroundColor: theme === "light" ? "#ffffff" : "#2d3139",
+            border: theme === "light" ? "1px solid #ddd" : "1px solid #181a1f",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            fontFamily: profile.fontFamily,
+            fontSize: `${profile.fontSize - 1}px`,
+        },
+
+        ".cm-tooltip-autocomplete": {
+            "& > ul": {
+                fontFamily: profile.fontFamily,
+            },
+            "& > ul > li": {
+                padding: "4px 8px",
+                borderRadius: "8px",
+                lineHeight: "1.5",
+            },
+            // 鼠标悬停或键盘选中的项
+            "& > ul > li[aria-selected]": {
+                backgroundColor: theme === "light" ? "#e2e8f0" : "#3e4451",
+                color: theme === "light" ? "#000" : "#fff",
+            }
+        },
+
+        ".cm-completionMatchedText": {
+            textDecoration: "none",
+            fontWeight: "bold",
+            color: theme === "light" ? "#2563eb" : "#61afef",
+        },
+
+        ".cm-cursor": {
+            borderLeft: "2px solid " + (theme === "light" ? "#222" : "#DDD"),
+        },
+    }), [profile.fontFamily, profile.fontSize, theme, height]);
+
+    const overrideWords = useMemo(() => {
+        const set = new Set<string>();
+    
+        profile.keywordGroups.forEach(group => {
+            group.keywords.forEach(k => {
+                const word = k.trim();
+                if (word) set.add(word);
+            });
+        });
+    
+        return set;
+    }, [profile.keywordGroups]);
+
+    const gml = useMemo(() => createGmlLanguage(overrideWords), [overrideWords]);
 
     const extensions = useMemo(
-        () => [javascript(), themeExt, highlightPlugin],
-        [highlightPlugin, themeExt]
+        () => [
+            gml, themeExt, indentUnit.of("    "), 
+            syntaxHighlighting(createEditorHighlightStyle(theme)), 
+            highlightPlugin, customAutocomplete
+        ],
+        [gml, themeExt, highlightPlugin, customAutocomplete, theme]
     );
 
     return (
-        <div
-            style={{
-                border:
-                    theme === "light"
-                        ? "1px solid rgba(15,23,42,0.15)"
-                        : "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 8,
-                overflow: "hidden",
-            }}
-        >
+        <div style={{
+            borderRadius: 8, overflow: "hidden", 
+            border: theme === "light" ? "1px solid #ddd" : "1px solid #444"
+        }}>
             <CodeMirror
                 key={extensionsKey}
                 value={value}
                 height={`${height}px`}
-                basicSetup={{
-                    lineNumbers: true,
-                    foldGutter: false,
-                    highlightActiveLine: true,
-                }}
+                basicSetup={{ lineNumbers: true, foldGutter: true, dropCursor: false }}
                 extensions={extensions}
-                onChange={(v) => onChange(v)}
+                onChange={onChange}
             />
         </div>
     );

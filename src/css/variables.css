@@ -1,0 +1,63 @@
+:root {
+    --bg: #1a1c1e;
+    --panel: #25282c;
+    --accent: #5b6fb6;
+    --text: #e0e0e0;
+    --node-bg: #2f3136;
+    --panel-border: #555;
+    --subtle-bg: rgba(255, 255, 255, 0.04);
+    --grid-dot: #333;
+    --minimap-bg: rgba(0, 0, 0, 0);
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+    --shadow-strong: 0 12px 30px rgba(0, 0, 0, 0.35);
+    --secondary-button: #4f545c;
+    --secondary-button-text: #FFF;
+    --secondary-button-cover: 1.1;
+
+    --scrollbar-size: 8px;
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: #CFCFCFAA;
+    --scrollbar-thumb-hover: #CFCFCF;
+    --scrollbar-back: #444;
+
+    --clip-line: #444;
+    --select: #292C31;
+}
+
+:root[data-theme="light"] {
+    --bg: #f3f6fb;
+    --panel: #ffffff;
+    --accent: #3b82f6;
+    --text: #1f2937;
+    --node-bg: #ffffff;
+    --panel-border: #dbe4f0;
+    --subtle-bg: rgba(0, 0, 0, 0.03);
+    --grid-dot: #ccd6e4;
+    --minimap-bg: rgba(255, 255, 255, 0);
+    --modal-overlay: rgba(15, 23, 42, 0.2);
+    --shadow-strong: 0 14px 34px rgba(15, 23, 42, 0.16);
+    --secondary-button: #e3e8ed;
+    --secondary-button-text: #333;
+    --secondary-button-cover: 0.9;
+
+    --scrollbar-thumb: rgba(0, 0, 0, 0.28);
+    --scrollbar-thumb-hover: #5E5E5E;
+    --scrollbar-back: rgba(0, 0, 0, 0.12);
+
+    --clip-line: #DDD;
+    --select: #ffffff;
+}
+
+body,
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+}

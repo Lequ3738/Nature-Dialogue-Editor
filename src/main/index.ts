@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
@@ -16,9 +17,65 @@ function createWindow() {
     mainWindow.removeMenu();
     mainWindow.setMenuBarVisibility(false);
 
+    if (!app.isPackaged)
+        mainWindow.webContents.openDevTools({mode:'detach'});
+
     let isDirty = false;
     ipcMain.on("editor:dirty", (_event, payload: { dirty?: boolean }) => {
         isDirty = !!payload?.dirty;
+    });
+
+    // Handle file save requests from renderer process
+    ipcMain.handle("editor:save-file", async (_event, filePath: string, content: string) => {
+        try {
+            fs.writeFileSync(filePath, content, "utf8");
+            return { success: true };
+        } catch (error) {
+            console.error("Failed to save file:", error);
+            return { success: false, error: String(error) };
+        }
+    });
+
+    // 处理另存为对话框
+    ipcMain.handle("dialog:save", async (_event, defaultName: string) => {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+            defaultPath: defaultName,
+            filters: [{ name: "GML Files", extensions: ["gml"] }]
+        });
+        return canceled ? null : filePath;
+    });
+
+    // 处理打开文件对话框
+    ipcMain.handle("dialog:open", async () => {
+        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+            properties: ["openFile"],
+            filters: [{ name: "GML Files", extensions: ["gml"] }]
+        });
+        return canceled ? null : filePaths[0];
+    });
+
+    // 读取文件内容
+    ipcMain.handle("editor:read-file", async (_event, filePath: string) => {
+        try {
+            return fs.readFileSync(filePath, "utf8");
+        } catch (error) {
+            console.error("Read file error:", error);
+            return null;
+        }
+    });
+
+    ipcMain.handle("editor:default-profile", () => {
+        return dialog.showMessageBoxSync(mainWindow, {
+            type: "warning",
+            buttons: ["取消", "继续"],
+            defaultId: 0,
+            cancelId: 0,
+            message: "将会覆盖现有的代码编辑器配置，是否继续？",
+        });
+    });
+
+    ipcMain.handle('editor:get-filename', (_, fullPath: string) => {
+        return path.basename(fullPath);
     });
 
     mainWindow.on("close", (e) => {
