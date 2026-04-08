@@ -297,7 +297,20 @@ export function makeGml(state: EditorState): string {
     gml += `if (${exp || "false"})\n    return self;\n\n`;
     gml += `if (object_index != objGame)\n    return noone;\n\n`
 
-    gml += "var _graph, _node, _list, _start;\n";
+    // 自定义变量定义阶段
+    gml += `// --- 自定义变量 ---\n`;
+    state.variables.forEach(v => {
+        const value = typeof v.value === "string" && v.type === "string" ? 
+            `"${v.value.replace(/"/g, '')}"` : 
+            String(v.value);
+        
+        if (v.persistent)
+            gml += `scrDefault("${v.name}", ${value});\n`;
+        else
+            gml += `${v.name} = ${value};\n`;
+    });
+
+    gml += "\nvar _graph, _node, _list, _start;\n";
     gml += "_start = -1;\n";
     gml += "_graph = ds_graph_create();\n\n";
 
@@ -421,12 +434,15 @@ export function parseGmlEditorData(text: string): EditorState | null {
             idCounter: typeof parsed.idCounter === "number" ? parsed.idCounter : base.idCounter,
             view: parsed.view && typeof parsed.view.x === "number" && typeof parsed.view.y === "number"
                 ? parsed.view : base.view,
+            
             title: typeof parsed.title === "string" ? parsed.title : base.title,
             description: typeof parsed.description === "string" ? parsed.description : base.description,
             author: typeof parsed.author === "string" ? parsed.author : base.author,
             version: typeof parsed.version === "string" ? parsed.version : base.version,
             forbiddenExpression: typeof parsed.forbiddenExpression === "string" ?
                 parsed.forbiddenExpression : base.forbiddenExpression,
+            
+            variables: Array.isArray(parsed.variables) ? parsed.variables : base.variables,
         };
     } catch {
         return null;

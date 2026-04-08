@@ -4,7 +4,7 @@
     --accent: #5b6fb6;
     --text: #e0e0e0;
     --node-bg: #2f3136;
-    --panel-border: #111;
+    --panel-border: #555;
     --subtle-bg: rgba(255, 255, 255, 0.04);
     --grid-dot: #333;
     --minimap-bg: rgba(0, 0, 0, 0);
@@ -21,6 +21,7 @@
     --scrollbar-back: #444;
 
     --clip-line: #444;
+    --select: #292C31;
 }
 
 :root[data-theme="light"] {
@@ -44,6 +45,7 @@
     --scrollbar-back: rgba(0, 0, 0, 0.12);
 
     --clip-line: #DDD;
+    --select: #ffffff;
 }
 
 body,
@@ -593,7 +595,7 @@ input[type="color"] {
 
 select {
     appearance: none; /* 移除原生箭头 */
-    background-color: var(--panel);
+    background-color: var(--select);
     color: var(--text);
     border: 1px solid color-mix(in srgb, var(--panel-border) 80%, transparent);
     border-radius: 6px;
@@ -738,7 +740,7 @@ select:disabled {
 }
 /* 变量行hover效果，与现有组件交互统一 */
 .variable-row:hover {
-    background: color-mix(in srgb, var(--accent) 8%, transparent) !important;
+    background: color-mix(in srgb, var(--accent) 2%, transparent) !important;
     border-color: color-mix(in srgb, var(--accent) 40%, transparent) !important;
     transition: all 0.2s ease;
 }

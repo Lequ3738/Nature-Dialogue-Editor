@@ -236,9 +236,7 @@ export default function CodeEditor(
             borderRight: "1px solid rgba(127, 127, 127, 0.25)",
         },
         ".cm-gutterElement.cm-activeLineGutter": {
-            // 背景色：建议比整体侧栏颜色稍亮或稍暗一点点
             backgroundColor: theme === "light" ? "#e2e8f0" : "rgba(255, 255, 255, 0.08)",
-            // 文字颜色：通常设置为更亮的颜色，突出当前行号
             color: theme === "light" ? "#0f172a" : "#ffffff",
         },
         ".cm-activeLine": {

@@ -2,9 +2,7 @@
 import type { CommentBox, CustomVariable, DragTarget, Edge, EditorState, Node, Resizing } from "./editorTypes";
 import { createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
-import path from "node:path";
 import CodeEditor, { KeywordGroup, KeywordType, type CodeStyleProfile } from "./CodeEditor";
-import { ipcMain } from "electron";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -1171,52 +1169,6 @@ export default function App() {
         [state.view.x, state.view.y, state.view.zoom]
     );
 
-    // ========== 自定义变量 操作函数 ==========
-    // 添加新变量
-    const handleAddVariable = () => {
-        const newVariable: CustomVariable = {
-            id: Date.now().toString(), // 用时间戳生成唯一ID
-            persistent: false,
-            type: "number",
-            name: `var_${Date.now().toString().slice(-6)}`, // 生成默认变量名
-            value: 0,
-        };
-        setState(prev => ({ ...prev, variables: [...prev.variables, newVariable] }));
-    };
-
-    // 更新变量属性
-    const handleUpdateVariable = (id: string, key: keyof CustomVariable, value: any) => {
-        setState(prev => {
-            return {
-                ...prev,
-                variables: prev.variables.map((item) => {
-                    if (item.id !== id) return item;
-                    // 类型切换时，自动转换值的格式
-                    if (key === "type") {
-                        const newType = value as "number" | "string";
-                        let newValue = item.value;
-                        if (newType === "number") {
-                            newValue = Number(item.value) || 0;
-                        } else {
-                            newValue = String(item.value);
-                        }
-                        return { ...item, type: newType, value: newValue };
-                    }
-                    return { ...item, [key]: value };
-                })
-            };
-        });
-    };
-
-    // 删除变量
-    const handleDeleteVariable = (id: string) => {
-        setState(prev => ({
-            ...prev,
-            variables: prev.variables.filter((item) => item.id !== id),
-        }));
-    };
-
-    // ========== 草稿专属变量操作函数 ==========
     // 草稿-添加新变量
     const handleDraftAddVariable = () => {
         if (!draftProjectState) return;
@@ -1242,7 +1194,7 @@ export default function App() {
                 ...prev,
                 variables: prev.variables.map((item) => {
                     if (item.id !== id) return item;
-                    // 类型切换时自动转换值格式（和原有逻辑保持一致）
+                    // 类型切换时自动转换值格式
                     if (key === "type") {
                         const newType = value as "number" | "string";
                         let newValue = item.value;
@@ -2177,95 +2129,13 @@ export default function App() {
                                             </div>
                                         ) : (
                                             (draftProjectState?.variables || []).map((variable) => (
-                                                <div
+                                                <VariableRow
                                                     key={variable.id}
-                                                    className="variable-row"
-                                                    style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 12,
-                                                        padding: '10px 12px',
-                                                        background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                                        border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
-                                                        borderRadius: '8px',
-                                                        flexShrink: 0, // 防止行高被压缩
-                                                    }}
-                                                >
-                                                    {/* 1. 是否持久化 勾选框 */}
-                                                    <div style={{ width: '40px', display: 'flex', justifyContent: 'center' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={variable.persistent}
-                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'persistent', e.target.checked)}
-                                                            style={{
-                                                                width: '16px',
-                                                                height: '16px',
-                                                                cursor: 'pointer',
-                                                                accentColor: 'var(--accent)'
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* 2. 变量类型 下拉框 */}
-                                                    <div style={{ width: '90px' }}>
-                                                        <select
-                                                            value={variable.type}
-                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'type', e.target.value)}
-                                                            style={{ width: '100%', margin: 0 }}
-                                                        >
-                                                            <option value="number">实数</option>
-                                                            <option value="string">字符串</option>
-                                                        </select>
-                                                    </div>
-
-                                                    {/* 3. 变量名 输入框 */}
-                                                    <div style={{ flex: 1, marginRight: 0, }}>
-                                                        <input
-                                                            type="text"
-                                                            value={variable.name}
-                                                            onChange={(e) => handleDraftUpdateVariable(variable.id, 'name', e.target.value)}
-                                                            placeholder="输入变量名"
-                                                            className="textarea-styled"
-                                                            style={{
-                                                                maxWidth: '120px',
-                                                                padding: '8px 10px',
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* 4. 变量值 输入框 */}
-                                                    <div style={{ flex: 1.6 }}>
-                                                        <input
-                                                            type={variable.type === 'number' ? 'number' : 'text'}
-                                                            value={variable.value}
-                                                            onChange={(e) => {
-                                                                const val = variable.type === 'number' 
-                                                                    ? Number(e.target.value) || 0 
-                                                                    : e.target.value;
-                                                                handleDraftUpdateVariable(variable.id, 'value', val);
-                                                            }}
-                                                            placeholder="输入变量值"
-                                                            className="textarea-styled"
-                                                            style={{
-                                                                maxWidth: '300px',
-                                                                padding: '8px 10px',
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {/* 5. 删除按钮 */}
-                                                    <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
-                                                        <button
-                                                            onClick={() => handleDraftDeleteVariable(variable.id)}
-                                                            style={{
-                                                                padding: '6px 10px',
-                                                                background: '#f04747',
-                                                            }}
-                                                        >
-                                                            删除
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                                    variable={variable}
+                                                    theme={theme}
+                                                    onUpdate={handleDraftUpdateVariable}
+                                                    onDelete={handleDraftDeleteVariable}
+                                                />
                                             ))
                                         )}
                                     </div>
@@ -2613,7 +2483,7 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
     };
 
     return (
-        <div style={{
+        <div className="variable-row" style={{
             border: theme === "dark" ? "1px solid #444" : "1px solid #DDD",
             borderRadius: 8, padding: 12, marginBottom: 12
         }}>
@@ -2667,6 +2537,133 @@ function GroupEditor({ group, theme, onChange, onDelete }: {
         </div>
     );
 }
+
+const VariableRow = React.memo(({
+    variable,
+    theme,
+    onUpdate,
+    onDelete
+}: {
+    variable: CustomVariable;
+    theme: "dark" | "light";
+    onUpdate: (id: string, key: keyof CustomVariable, value: any) => void;
+    onDelete: (id: string) => void;
+}) => {
+    // 本地临时状态缓存输入值，仅失焦时同步到父级，避免高频更新
+    const [tempName, setTempName] = useState(variable.name);
+    const [tempValue, setTempValue] = useState(String(variable.value));
+
+    // 当外部变量数据变化时（如类型切换、重置草稿），同步更新本地状态
+    useEffect(() => {
+        setTempName(variable.name);
+        setTempValue(String(variable.value));
+    }, [variable.name, variable.value]);
+
+    // 类型切换处理（保留原有自动转换逻辑）
+    const handleTypeChange = (newType: "number" | "string") => {
+        onUpdate(variable.id, "type", newType);
+    };
+
+    return (
+        <div
+            className="variable-row"
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 12px',
+                border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
+                borderRadius: '8px',
+                flexShrink: 0,
+            }}
+        >
+            {/* 1. 持久化勾选框 */}
+            <div style={{ width: '40px', display: 'flex', justifyContent: 'center' }}>
+                <input
+                    type="checkbox"
+                    checked={variable.persistent}
+                    onChange={(e) => onUpdate(variable.id, 'persistent', e.target.checked)}
+                    style={{
+                        width: '16px',
+                        height: '16px',
+                        cursor: 'pointer',
+                        accentColor: 'var(--accent)'
+                    }}
+                />
+            </div>
+
+            {/* 2. 变量类型下拉框 */}
+            <div style={{ width: '90px' }}>
+                <select
+                    value={variable.type}
+                    onChange={(e) => handleTypeChange(e.target.value as "number" | "string")}
+                    style={{ width: '100%', margin: 0 }}
+                >
+                    <option value="number">实数</option>
+                    <option value="string">字符串</option>
+                </select>
+            </div>
+
+            {/* 3. 变量名输入框（同样修复输入卡顿问题） */}
+            <div style={{ flex: 1, marginRight: 0 }}>
+                <input
+                    type="text"
+                    value={tempName}
+                    onChange={(e) => setTempName(e.target.value)}
+                    onBlur={() => onUpdate(variable.id, 'name', tempName.trim())}
+                    placeholder="输入变量名"
+                    className="textarea-styled"
+                    style={{
+                        maxWidth: '120px',
+                        padding: '8px 10px',
+                    }}
+                />
+            </div>
+
+            {/* 4. 变量值输入框（核心修复） */}
+            <div style={{ flex: 1.6 }}>
+                <input
+                    type="text"
+                    value={tempValue}
+                    onChange={(e) => setTempValue(e.target.value)}
+                    // 仅失焦时做类型转换+同步到父级，不打断输入
+                    onBlur={() => {
+                        let finalValue: string | number = tempValue;
+                        // 数字类型格式化处理
+                        if (variable.type === "number") {
+                            const num = Number(tempValue);
+                            finalValue = isNaN(num) ? 0 : num;
+                            setTempValue(String(finalValue));
+                        }
+                        onUpdate(variable.id, 'value', finalValue);
+                    }}
+                    placeholder="输入变量值"
+                    className="textarea-styled"
+                    style={{
+                        maxWidth: '300px',
+                        padding: '8px 10px',
+                    }}
+                />
+            </div>
+
+            {/* 5. 删除按钮 */}
+            <div style={{ width: '60px', display: 'flex', justifyContent: 'center' }}>
+                <button
+                    onClick={() => onDelete(variable.id)}
+                    style={{
+                        padding: '6px 10px',
+                        background: '#f04747',
+                    }}
+                >
+                    删除
+                </button>
+            </div>
+        </div>
+    );
+});
+
+// 仅当当前变量数据变化时才触发重渲染
+VariableRow.displayName = "VariableRow";
 
 declare global {
     interface Window {
