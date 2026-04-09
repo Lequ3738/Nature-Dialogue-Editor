@@ -12,7 +12,7 @@ import {
 } from "@codemirror/autocomplete";
 import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
 import { tags as t } from "@lezer/highlight";
-import { Character } from "./editorTypes";
+import { Character, charaMotionAndExpressionInfo } from "./editorTypes";
 
 export type KeywordType = "function" | "variable" | "keyword" | "constant";
 
@@ -179,10 +179,15 @@ export default function CodeEditor(
                     group.keywords.forEach(key => {
                         const trimmedKey = key.trim();
                         if (trimmedKey) {
+                            const hasDescription = charaMotionAndExpressionInfo.has(trimmedKey);
+
                             options.push({
                                 label: trimmedKey,
                                 type: group.type || "variable",
-                                info: `[${group.name}]`,
+                                info: `[${group.name}${
+                                    hasDescription ? ` - ${
+                                    charaMotionAndExpressionInfo.get(trimmedKey)
+                                    }` : ""}]`,
                                 boost: 2
                             });
                             addedLabels.add(trimmedKey);

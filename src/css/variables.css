@@ -22,6 +22,8 @@
 
     --clip-line: #444;
     --select: #292C31;
+
+    --comment-resizer: #666;
 }
 
 :root[data-theme="light"] {
@@ -46,6 +48,8 @@
 
     --clip-line: #DDD;
     --select: #ffffff;
+
+    --comment-resizer: #AAA;
 }
 
 body,

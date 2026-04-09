@@ -567,11 +567,51 @@ export const defaultProfile: CodeStyleProfile = {
         }, {
             id: "g4", name: "脚本名", type: "function",
             colorLight: "#800080", colorDark: "#EF4DEF",
-            keywords: []
+            keywords: [
+                "scrCharacterAddPlace", "scrCharacterStartEffect",
+                "scrCharacterSetExpression", "scrCharacterAdd",
+                "scrCharacterDepth", "scrCharacterDestroy",
+                "scrCharacterDestroyAll", "execute_in_deact_object",
+            ]
         }, {
             id: "g5", name: "资源名", type: "variable",
             colorLight: "#808000", colorDark: "#E6E660",
-            keywords: []
-        }
+            keywords: [
+                "objGame", "objPlayer",
+            ]
+        }, {
+            id: "g6", name: "人物动作与表情", type: "constant",
+            colorDark: "#ff8080", colorLight: "#800000",
+            keywords: [
+              "nm_enter", "nm_enter_from_bottom", "nm_enter_from_left",
+              "nm_enter_from_right", "nm_shake", "nm_shake_small", "nm_jump",
+              "nm_jump_twice", "nm_exclamation", "nm_question", "nm_surprise",
+              "nm_wait", "nm_twinkle", "nm_happy", "nm_action", "nm_chat",
+              "nm_anxiety", "nm_sweat", "nm_salute", "nm_angry", "nm_talkless",
+              "nm_shy", "nm_exit", "nm_exit_to_bottom", "nm_exit_to_left",
+              "nm_exit_to_right", "nm_move_left", "nm_move_right", "exp_normal",
+              "exp_open_mouth", "exp_confidence", "exp_sad", "exp_happy",
+              "exp_angry", "exp_surprise", "exp_expectation", "exp_talkless",
+              "exp_underestimate", "exp_ponder"
+            ]
+        }      
     ]
 };
+
+export const charaMotionAndExpressionInfo = new Map<string, string>([
+    ["nm_enter", "动作：淡入"], ["nm_enter_from_bottom", "动作：从下淡入"], 
+    ["nm_enter_from_left", "动作：从左淡入"], ["nm_enter_from_right", "动作：从右淡入"], 
+    ["nm_shake", "动作：摇动"], ["nm_shake_small", "动作：小幅摇动"], ["nm_jump", "动作：跳跃"],
+    ["nm_jump_twice", "动作：连续两次跳跃"], ["nm_exclamation", "动作：惊讶"], 
+    ["nm_question", "动作：疑惑"], ["nm_surprise", "动作：吃惊"], ["nm_wait", "动作：等待"], 
+    ["nm_twinkle", "动作：闪烁"], ["nm_happy", "动作：高兴"], ["nm_action", "动作：注意"], 
+    ["nm_chat", "动作：聊天"], ["nm_anxiety", "动作：焦虑"], ["nm_sweat", "动作：冒汗"], 
+    ["nm_salute", "动作：敬意"], ["nm_angry", "动作：生气"], ["nm_talkless", "动作：沉默"], 
+    ["nm_shy", "动作：害羞"], ["nm_exit", "动作：淡出"], ["nm_exit_to_bottom", "动作：向下淡出"],
+    ["nm_exit_to_left", "动作：向左淡出"], ["nm_exit_to_right", "动作：向右淡出"], 
+    ["nm_move_left", "动作：向左移动"], ["nm_move_right", "动作：向右移动"], 
+    ["exp_normal", "表情：正常"], ["exp_open_mouth", "表情：张嘴"], ["exp_confidence", "表情：自信"],
+    ["exp_sad", "表情：悲伤"], ["exp_happy", "表情：高兴"], ["exp_angry", "表情：生气"],
+    ["exp_surprise", "表情：吃惊"], ["exp_expectation", "表情：期待"], ["exp_talkless", "表情：沉默"],
+    ["exp_underestimate", "表情：轻视"], ["exp_ponder", "表情：沉思"]
+]);

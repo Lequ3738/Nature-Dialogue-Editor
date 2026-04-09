@@ -1302,7 +1302,9 @@ export default function App() {
                                     {
                                         !isStart ?
                                             (
-                                                <div className="node-body">
+                                                <div className="node-body has-tooltip"
+                                                    title={ n.type === "node" && n.code ? `执行代码：\n\n${n.code}` : undefined }
+                                                >
                                                     {
                                                         isCond ? (
                                                             n.code ? n.code :

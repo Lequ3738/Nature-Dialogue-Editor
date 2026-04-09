@@ -111,7 +111,7 @@
     height: 15px;
     cursor: se-resize;
     pointer-events: auto;
-    background: linear-gradient(135deg, transparent 50%, #666 50%);
+    background: linear-gradient(135deg, transparent 50%, var(--comment-resizer) 50%);
 }
 
 /* 下面一排的颜色选择 */
