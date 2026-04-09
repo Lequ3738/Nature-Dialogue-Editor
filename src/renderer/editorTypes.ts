@@ -15,6 +15,7 @@ export interface Node {
     en: string;
     code: string;
     color: string;
+    character: Character;
 }
 
 export interface CommentBox {
@@ -102,7 +103,7 @@ export function createInitialState(): EditorState {
     };
 }
 
-export type CustomVariable = {
+export interface CustomVariable {
     id: string; // 唯一标识，用于增删改查
     persistent: boolean; // 是否持久化
     type: "number" | "string"; // 变量类型：实数/字符串
@@ -110,11 +111,18 @@ export type CustomVariable = {
     value: string | number; // 变量值
 };
 
-export type Character = {
+export interface Character {
     id: string; // 唯一标识
-    nameCN: string; // 角色中文名
+    name: string; // 角色名
     constantName: string; // 代码中使用的常量名
     remark: string; // 角色备注
+};
+
+export const characterNone: Character = {
+    id: "SPEC001",
+    name: "无角色",
+    constantName: "npc_noone",
+    remark: "这代表“没有角色”说的话。",
 };
 
 export const defaultProfile: CodeStyleProfile = {

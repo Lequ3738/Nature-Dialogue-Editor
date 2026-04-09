@@ -11,7 +11,7 @@ export function CharacterScreen({ theme, draftProfile, setDraftProfile } : {
         if (!draftProfile) return;
         const newCharacter: Character = {
             id: Date.now().toString(),
-            nameCN: "新角色",
+            name: "新角色",
             constantName: `CHAR_${Date.now().toString().slice(-6)}`,
             remark: "",
         };
@@ -131,26 +131,15 @@ export function CharacterScreen({ theme, draftProfile, setDraftProfile } : {
                         <div
                             key={character.id}
                             className="character-card"
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '12px',
-                                padding: '16px',
-                                background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                border: `1px solid ${theme === "dark" ? "#444" : "#e5e7eb"}`,
-                                borderRadius: '8px',
-                                flexShrink: 0,
-                                position: 'relative',
-                            }}
                         >
                             {/* 角色中文名输入框 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <label style={{ fontSize: '12px', color: '#888' }}>角色中文名</label>
+                                <label style={{ fontSize: '12px', color: '#888' }}>角色名称</label>
                                 <input
                                     type="text"
-                                    value={character.nameCN}
-                                    onChange={(e) => handleDraftUpdateCharacter(character.id, 'nameCN', e.target.value)}
-                                    placeholder="输入角色中文名"
+                                    value={character.name}
+                                    onChange={(e) => handleDraftUpdateCharacter(character.id, 'name', e.target.value)}
+                                    placeholder="输入角色名称"
                                     className="textarea-styled"
                                     style={{
                                         padding: '8px 10px',
@@ -162,7 +151,7 @@ export function CharacterScreen({ theme, draftProfile, setDraftProfile } : {
 
                             {/* 常量名输入框 */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <label style={{ fontSize: '12px', color: '#888' }}>常量名（代码中使用）</label>
+                                <label style={{ fontSize: '12px', color: '#888' }}>常量名</label>
                                 <input
                                     type="text"
                                     value={character.constantName}
@@ -184,7 +173,7 @@ export function CharacterScreen({ theme, draftProfile, setDraftProfile } : {
                                     rows={4}
                                     value={character.remark}
                                     onChange={(e) => handleDraftUpdateCharacter(character.id, 'remark', e.target.value)}
-                                    placeholder="输入角色备注信息"
+                                    placeholder="输入备注信息"
                                     className="custom-scroll"
                                     style={{
                                         padding: '8px 10px',

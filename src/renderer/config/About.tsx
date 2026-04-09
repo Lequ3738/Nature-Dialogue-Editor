@@ -100,7 +100,7 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                             }`
                         }}>
                             <img 
-                                src="src/resources/electron.svg" 
+                                src={`${import.meta.env.BASE_URL}resources/electron.svg`}
                                 alt="Electron" 
                                 style={{ width: '32px', height: '32px', objectFit: 'contain' }}
                             />
@@ -128,7 +128,7 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                             }`
                         }}>
                             <img 
-                                src={`src/resources/react_${
+                                src={`${import.meta.env.BASE_URL}resources/react_${
                                     theme === "light" ? "light" : "dark"
                                 }.svg`} 
                                 alt="React" 
@@ -157,7 +157,7 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                             }`
                         }}>
                             <img 
-                                src={`src/resources/vite_${
+                                src={`${import.meta.env.BASE_URL}resources/vite_${
                                     theme === "light" ? "light" : "dark"
                                 }.svg`} 
                                 alt="Vite" 

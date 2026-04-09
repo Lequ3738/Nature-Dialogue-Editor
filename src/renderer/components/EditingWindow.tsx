@@ -1,6 +1,6 @@
 import { ModalDraft, PRESET_COLORS } from "../App";
 import CodeEditor, { CodeStyleProfile } from "../CodeEditor";
-import { Node } from "../editorTypes"
+import { characterNone, Node } from "../editorTypes"
 
 export function EditingCommentWindows({ 
     commentDraft, setCommentDraft, commentColorDraft, setCommentColorDraft,
@@ -81,12 +81,35 @@ export function EditingNodeWindows({
     return (
         <div id="modal-overlay" style={{ display: "flex", }}>
             <div id="modal">
-                <h3 id="m-title" style={{ margin: 0 }}>
-                    节点配置
-                </h3>
+                { editingNode?.type === "node" ? 
+                    <div className="config-styled">
+                        <h3 id="m-title" style={{ margin: 0 }}>
+                            节点配置
+                        </h3>
+                        <div className="color-row">
+                            <label>当前角色：</label>
+                            <select style={{ width: 250 }}
+                                value={draft.character.constantName}
+                                onChange={e => setDraft(d => ({ ...d, 
+                                    character: codeProfile.characters.find(
+                                        c => c.constantName === e.target.value
+                                    ) || characterNone
+                                }))}
+                            >
+                                <option value="npc_noone">无角色</option>
+                                {codeProfile.characters.map((c) => (
+                                    <option value={c.constantName || "npc_noone"}>
+                                        {c.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div> : <h3 id="m-title" style={{ margin: 0 }}>
+                        节点配置
+                    </h3>
+                }
 
-                {(editingNode?.type !== "condition" && editingNode?.type !== "end" &&
-                    editingNode?.type !== "start") ? (
+                { editingNode?.type === "node" && 
                     <div className="lang-box">
                         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                             <label style={{ fontSize: 12, color: "#888" }}>中文</label>
@@ -113,7 +136,7 @@ export function EditingNodeWindows({
                             />
                         </div>
                     </div>
-                ) : null}
+                }
 
                 {editingNode?.type !== "start" ?
                     <>

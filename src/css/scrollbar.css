@@ -1,6 +1,8 @@
 .custom-scroll {
     scrollbar-width: thin; 
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    margin-right: -4px;
+    padding-right: 8px;
 
     overflow: auto;
 }

@@ -196,7 +196,7 @@ export default function CodeEditor(
                         options.push({
                             label: trimmedKey,
                             type: "constant",
-                            info: `[角色：${char.nameCN}]`,
+                            info: `[角色：${char.name}]`,
                             boost: 2
                         });
                         addedLabels.add(trimmedKey);

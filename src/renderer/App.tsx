@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, ProjectData, Resizing } from "./editorTypes";
-import { createInitialState, defaultProfile } from "./editorTypes";
+import type { Character, CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, ProjectData, Resizing } from "./editorTypes";
+import { characterNone, createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
 import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
 import { AboutScreen } from "./config/About";
@@ -27,6 +27,7 @@ export type ModalDraft = {
     en: string;
     code: string;
     color: string;
+    character: Character;
 };
 
 export const PRESET_COLORS = [
@@ -137,7 +138,7 @@ export default function App() {
     }, [state]);
 
     const [editingId, setEditingId] = useState<number | null>(null);
-    const [draft, setDraft] = useState<ModalDraft>({ cn: "", en: "", code: "", color: "#7289da" });
+    const [draft, setDraft] = useState<ModalDraft>({ cn: "", en: "", code: "", color: "#7289da", character: characterNone });
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
@@ -951,7 +952,7 @@ export default function App() {
     const openModal = (id: number) => {
         setEditingId(id);
         const n = state.nodes.find((x) => x.id === id);
-        if (n) setDraft({ cn: n.cn, en: n.en, code: n.code, color: n.color });
+        if (n) setDraft({ cn: n.cn, en: n.en, code: n.code, color: n.color, character: n.character});
     };
 
     const editingNode = useMemo(() => {
@@ -1005,7 +1006,11 @@ export default function App() {
                 if (editingNode?.type === "condition") {
                     return { ...n, code: draft.code, color: draft.color };
                 }
-                return { ...n, cn: draft.cn, en: draft.en, code: draft.code, color: draft.color };
+                return { ...n, 
+                    cn: draft.cn, en: draft.en, 
+                    code: draft.code, color: draft.color, 
+                    character: draft.character
+                };
             });
             return { ...prev, nodes: nextNodes };
         });
@@ -1271,7 +1276,11 @@ export default function App() {
                                         <span style={{ textAlign: "center" }}> {
                                             isStart ?
                                                 "开始" :
-                                                (isCond ? "条件" : (n.type === "end" ? "结束" : "对话"))
+                                                (isCond ? "条件" : 
+                                                    (n.type === "end" ? "结束" : 
+                                                        `对话：${n.character.name}`
+                                                    )
+                                                )
                                         }
                                         </span>
                                         {

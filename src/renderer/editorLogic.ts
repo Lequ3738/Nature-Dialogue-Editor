@@ -1,5 +1,5 @@
 import type { CommentBox, Edge, EdgeType, EditorState, Node, NodeType } from "./editorTypes";
-import { createInitialState } from "./editorTypes";
+import { characterNone, createInitialState } from "./editorTypes";
 import pako from 'pako';
 
 const NODE_WIDTH = 260;
@@ -103,6 +103,7 @@ export function addObject(
         en: "",
         code: "",
         color: getNodeDefaultColor(type),
+        character: characterNone
     };
     return { ...state, nodes: [...state.nodes, next], idCounter: state.idCounter + 1 };
 }
@@ -288,9 +289,9 @@ function decompressFromBase64(base64Str: string): string {
 
 export function makeGml(state: EditorState): string {
     let gml = `// 对话文件：${state.title}\n`;
-    gml += `// 作者：${state.author}\n`;
-    gml += `// 版本：${state.version}\n`;
-    gml += `// 描述：${state.description}\n`;
+    gml += state.author ? `// 作者：${state.author}\n` : "";
+    gml += state.version ? `// 版本：${state.version}\n` : "";
+    gml += state.description ? `// 描述：${state.description}\n` : "";
     gml += `// 最后修改时间: ${getCurrentDateTime()}\n\n`;
 
     const exp = state.forbiddenExpression;
@@ -327,16 +328,19 @@ export function makeGml(state: EditorState): string {
         );
 
         gml += `_node[${n.id}] = ds_graph_node_add(_graph, '\n`;
+        if (!isChoiceResult) gml += `    curCharacter = ${n.character.constantName};\n\n`;
         gml += `    var _text; \n`;
         gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;
         gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
 
         if (isChoiceResult) {
             if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            gml += `    //*/\n`;
             gml += `    return _text[global.language];\n`;
         } else {
-            gml += `    displayingText = _text[global.language];\n`;
+            gml += `    displayingText = _text[global.language];\n\n`;
             if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            gml += `    //*/\n`;
         }
         gml += `');\n\n`;
     });
