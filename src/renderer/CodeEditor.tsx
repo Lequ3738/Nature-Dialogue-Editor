@@ -66,9 +66,7 @@ export default function CodeEditor(
             const color = theme === "light" ? group.colorLight : group.colorDark;
             group.keywords.forEach(kw => {
                 const trimmed = kw.trim();
-                if (trimmed) {
-                    map.set(trimmed, color);
-                }
+                if (trimmed) map.set(trimmed, color);
             });
         });
 
@@ -103,7 +101,7 @@ export default function CodeEditor(
                 syntaxTree(view.state).iterate({
                     from, to,
                     enter: (node) => {
-                        // 核心：只拦截我们关心的词法节点类型
+                        // 只拦截我们关心的词法节点类型
                         const isWordNode = 
                             node.name === "keyword" || 
                             node.name === "variable" || 
@@ -318,6 +316,11 @@ export default function CodeEditor(
                 const word = k.trim();
                 if (word) set.add(word);
             });
+        });
+
+        profile.characters.forEach(char => {
+            const word = char.constantName.trim();
+            if (word) set.add(word);
         });
     
         return set;
