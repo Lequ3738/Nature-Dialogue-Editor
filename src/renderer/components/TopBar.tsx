@@ -134,6 +134,22 @@ export function TopBar({
             />
             <button
                 className="theme-toggle"
+                onClick={() => setState(
+                    prev => ({
+                        ...prev,
+                        view: {
+                            ...prev.view,
+                            x: windowSize.w / 2 - (windowSize.w / 2 - prev.view.x) / prev.view.zoom,
+                            y: windowSize.h / 2 - (windowSize.h / 2 - prev.view.y) / prev.view.zoom,
+                            zoom: 1,
+                        }
+                    })
+                )}
+            >
+                🔍
+            </button>
+            <button
+                className="theme-toggle"
                 onClick={() => handleThemeChange(theme === "dark" ? "light" : "dark")}
             >
                 {theme === "dark" ? "🌙" : "🌞"}

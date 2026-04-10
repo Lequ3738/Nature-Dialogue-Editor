@@ -30,6 +30,7 @@
     border-bottom: none;
     text-align: center;
     display: block;
+    background: transparent;
 }
 
 .node-body {
@@ -54,6 +55,7 @@
     padding-bottom: 6px;
     padding-left: 20px;
     padding-right: 14px;
+    background: transparent;
 }
 
 .port {

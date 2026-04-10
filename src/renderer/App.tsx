@@ -590,7 +590,7 @@ export default function App() {
 
             if (edge.type === "true") ctx.strokeStyle = "#43b581";
             else if (edge.type === "false") ctx.strokeStyle = "#f04747";
-            else ctx.strokeStyle = "#7289da";
+            else ctx.strokeStyle = from.color;
 
             ctx.lineWidth = Math.max(1, 3 * zoom);
             ctx.lineCap = "round";
@@ -667,7 +667,7 @@ export default function App() {
             const { x, y } = worldToMini(n.x, n.y);
             const w = bounds.w * scale;
             const h = bounds.h * scale;
-            const r = 10 * scale;
+            const r = (n.type === "start" ? 100 : 10) * scale;
             const headerH = 30 * scale;
             const footerH = 26 * scale;
 
@@ -681,13 +681,16 @@ export default function App() {
             ctx.strokeStyle = n.color;
             ctx.stroke();
 
-            // Header stripe
-            ctx.fillStyle = theme === "light" ? "rgba(59,130,246,0.06)" : "rgba(255,255,255,0.06)";
-            ctx.fillRect(x, y, w, headerH);
+            if (n.type !== "start")
+            {
+                // Header stripe
+                ctx.fillStyle = theme === "light" ? "rgba(59,130,246,0.06)" : "rgba(255,255,255,0.06)";
+                ctx.fillRect(x, y, w, headerH);
 
-            // Footer stripe
-            ctx.fillStyle = theme === "light" ? "rgba(59,130,246,0.05)" : "rgba(255,255,255,0.04)";
-            ctx.fillRect(x, y + h - footerH, w, footerH);
+                // Footer stripe
+                ctx.fillStyle = theme === "light" ? "rgba(59,130,246,0.05)" : "rgba(255,255,255,0.04)";
+                ctx.fillRect(x, y + h - footerH, w, footerH);
+            }
 
             // Ports (small indicators)
             const portY = y + h - footerH + footerH / 2;
@@ -780,7 +783,8 @@ export default function App() {
             ctx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endMini.x, endMini.y);
 
             ctx.strokeStyle =
-                edge.type === "true" ? "#43b581" : edge.type === "false" ? "#f04747" : "#7289da";
+                edge.type === "true" ? "#43b581" : 
+                edge.type === "false" ? "#f04747" : fromNode.color;
             ctx.lineWidth = Math.max(1, 2 * scale);
             ctx.lineCap = "round";
             ctx.stroke();
