@@ -1500,10 +1500,10 @@ export default function App() {
                                     >
                                         <span style={{ textAlign: "center" }}> {
                                             isStart ?
-                                                "开始" :
-                                                (isCond ? "条件" : 
-                                                    (n.type === "end" ? "结束" : 
-                                                        `对话：${n.character.name}`
+                                                `#${n.id} 开始` :
+                                                (isCond ? `#${n.id} 条件` : 
+                                                    (n.type === "end" ? `#${n.id} 结束` : 
+                                                        `#${n.id} 对话：${n.character.name}`
                                                     )
                                                 )
                                         }

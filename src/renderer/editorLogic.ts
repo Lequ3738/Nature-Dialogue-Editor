@@ -385,7 +385,7 @@ export function makeGml(state: EditorState): string {
         // 找到所有能到达这个结束节点的对话节点
         const effectiveParents = findEffectiveDialogueParents(state, n.id);
         effectiveParents.forEach((parent) => {
-            gml += `dialog_end(${parent.id}, '\n`;
+            gml += `dialog_end(_node[${parent.id}], '\n`;
             if (n.code) {
                 gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
             }
