@@ -123,6 +123,18 @@ function getNodeAnchor(
         : { x: centerTo.x, y: to.y + to.h, nx: 0, ny: 1 };
 }
 
+// 计算两个触摸点的距离
+function getTouchDistance(touch1: Touch, touch2: Touch): number {
+    return Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+}
+// 计算两个触摸点的中心点
+function getTouchCenter(touch1: Touch, touch2: Touch): { x: number; y: number } {
+    return {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2,
+    };
+}
+
 export default function App() {
     const [state, setState] = useState<EditorState>(() => createInitialState());
     const [theme, setTheme] = useState<"dark" | "light">(localStorage.getItem("dialogueEditor.theme") === "light" ? "light" : "dark");
@@ -145,8 +157,18 @@ export default function App() {
 
     // 设置面板中的编辑状态
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
-
     const [draftProjectState, setDraftProjectState] = useState<ProjectData | null>(null);
+
+    // 触摸状态管理
+    const touchStateRef = useRef({
+        isTouching: false,
+        isPinching: false,
+        initialTouches: [] as Touch[],
+        initialView: { x: 0, y: 0, zoom: 1 },
+        initialDistance: 0,
+        initialCenter: { x: 0, y: 0 },
+        isTouchHandled: false, // 防止触摸事件后触发重复的鼠标事件
+    });
 
     // 数据迁移和验证辅助函数
     const validateProfile = (p: any) => {
@@ -806,6 +828,8 @@ export default function App() {
         if (!viewport) return;
 
         const onMouseDown = (e: MouseEvent) => {
+            if (touchStateRef.current.isTouchHandled) return;
+
             // Middle mouse button panning.
             if (e.button === 1) {
                 e.preventDefault();
@@ -818,6 +842,8 @@ export default function App() {
         };
 
         const onMouseMove = (e: MouseEvent) => {
+            if (touchStateRef.current.isTouchHandled) return;
+
             setState((prev) => {
                 let next = prev;
 
@@ -880,6 +906,8 @@ export default function App() {
         };
 
         const onMouseUp = () => {
+            if (touchStateRef.current.isTouchHandled) return;
+
             setState((prev) => ({
                 ...prev,
                 isPanning: false,
@@ -890,6 +918,8 @@ export default function App() {
         };
 
         const onWheel = (e: WheelEvent) => {
+            if (touchStateRef.current.isTouchHandled) return;
+
             e.preventDefault();
             setState((prev) => {
                 const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -923,12 +953,169 @@ export default function App() {
         };
     }, []);
 
+    // ========== 触摸屏核心事件监听 ==========
+    useEffect(() => {
+        const viewport = viewportRef.current;
+        if (!viewport) return;
+        const touchState = touchStateRef.current;
+
+        // 触摸开始
+        const onTouchStart = (e: TouchEvent) => {
+            e.stopPropagation();
+            touchState.isTouchHandled = true;
+            touchState.isTouching = true;
+            const touches = e.touches;
+
+            // 双指触摸：进入捏合缩放模式
+            if (touches.length === 2) {
+                e.preventDefault();
+                touchState.isPinching = true;
+                touchState.initialTouches = [touches[0], touches[1]];
+                touchState.initialDistance = getTouchDistance(touches[0], touches[1]);
+                touchState.initialCenter = getTouchCenter(touches[0], touches[1]);
+                touchState.initialView = { ...stateRef.current.view };
+                // 清空拖拽状态，避免冲突
+                setState(prev => ({ ...prev, dragTarget: null, isPanning: false }));
+                return;
+            }
+
+            // 单指触摸：判断是否拖拽元素，否则平移视口
+            if (touches.length === 1) {
+                const touch = touches[0];
+                const target = touch.target as HTMLElement;
+
+                // 触摸在可拖拽元素上（节点header/注释handle），不做视口平移
+                const isDragTarget = 
+                    target.closest('.node-header') || 
+                    target.closest('.comment-handle') ||
+                    target.closest('.comment-resizer');
+                
+                if (!isDragTarget) {
+                    e.preventDefault();
+                    // 进入视口平移模式
+                    setState(prev => ({
+                        ...prev,
+                        isPanning: true,
+                        lastMouse: { x: touch.clientX, y: touch.clientY }
+                    }));
+                }
+            }
+        };
+
+        // 触摸移动
+        const onTouchMove = (e: TouchEvent) => {
+            const touches = e.touches;
+            const touchState = touchStateRef.current;
+
+            // 双指捏合缩放+平移
+            if (touchState.isPinching && touches.length === 2) {
+                e.preventDefault();
+                const [touch1, touch2] = touches;
+                const currentDistance = getTouchDistance(touch1, touch2);
+                const currentCenter = getTouchCenter(touch1, touch2);
+                
+                // 计算缩放比例
+                const scaleRatio = currentDistance / touchState.initialDistance;
+                const nextZoom = Math.min(Math.max(0.1, touchState.initialView.zoom * scaleRatio), 2);
+
+                // 计算中心点偏移（双指平移）
+                const centerDx = currentCenter.x - touchState.initialCenter.x;
+                const centerDy = currentCenter.y - touchState.initialCenter.y;
+
+                // 基于中心点的缩放锚点计算（和滚轮缩放逻辑一致，避免画面跳动）
+                const centerWorldX = (touchState.initialCenter.x - touchState.initialView.x) / touchState.initialView.zoom;
+                const centerWorldY = (touchState.initialCenter.y - touchState.initialView.y) / touchState.initialView.zoom;
+                const newViewX = currentCenter.x - centerWorldX * nextZoom + centerDx;
+                const newViewY = currentCenter.y - centerWorldY * nextZoom + centerDy;
+
+                setState(prev => ({
+                    ...prev,
+                    view: {
+                        zoom: nextZoom,
+                        x: newViewX,
+                        y: newViewY
+                    }
+                }));
+                return;
+            }
+
+            // 单指视口平移
+            if (touches.length === 1 && stateRef.current.isPanning) {
+                e.preventDefault();
+                const touch = touches[0];
+                setState(prev => {
+                    if (!prev.lastMouse) return prev;
+                    return {
+                        ...prev,
+                        view: {
+                            ...prev.view,
+                            x: prev.view.x + (touch.clientX - prev.lastMouse.x),
+                            y: prev.view.y + (touch.clientY - prev.lastMouse.y),
+                        },
+                        lastMouse: { x: touch.clientX, y: touch.clientY }
+                    };
+                });
+            }
+        };
+
+        // 触摸结束/取消
+        const onTouchEnd = (e: TouchEvent) => {
+            const touchState = touchStateRef.current;
+            
+            // 重置触摸状态
+            touchState.isTouching = false;
+            touchState.isPinching = false;
+            touchState.initialTouches = [];
+
+            // 重置编辑器状态
+            setState(prev => ({
+                ...prev,
+                isPanning: false,
+                lastMouse: undefined,
+                dragTarget: null,
+                resizing: null
+            }));
+
+            // 延迟重置触摸标记，避免后续触发的鼠标事件重复执行
+            setTimeout(() => {
+                touchState.isTouchHandled = false;
+            }, 100);
+        };
+
+        const onTouchCancel = () => {
+            onTouchEnd(new TouchEvent('touchcancel'));
+        };
+
+        // 绑定触摸事件，passive: false 允许调用preventDefault
+        viewport.addEventListener('touchstart', onTouchStart, { passive: false });
+        viewport.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd);
+        window.addEventListener('touchcancel', onTouchCancel);
+
+        return () => {
+            viewport.removeEventListener('touchstart', onTouchStart);
+            viewport.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onTouchEnd);
+            window.removeEventListener('touchcancel', onTouchCancel);
+        };
+    }, []);
+
     const beginDrag = (e: React.MouseEvent, target: DragTarget) => {
         // Only left button drags objects. Middle button reserved for viewport panning.
         if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
         setState((prev) => ({ ...prev, dragTarget: target }));
+    };
+
+    const beginTouchDrag = (e: React.TouchEvent, target: DragTarget) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const touch = e.touches[0];
+        setState((prev) => ({ 
+            ...prev, 
+            dragTarget: { ...target, ox: touch.clientX, oy: touch.clientY } 
+        }));
     };
 
     const beginResize = (e: React.MouseEvent, commentId: string) => {
@@ -943,6 +1130,23 @@ export default function App() {
             id: commentId,
             ox: e.clientX,
             oy: e.clientY,
+            startW: c.w,
+            startH: c.h,
+        };
+        setState((prev) => ({ ...prev, resizing }));
+    };
+
+    const beginTouchResize = (e: React.TouchEvent, commentId: string) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const touch = e.touches[0];
+        const current = stateRef.current;
+        const c = current.comments.find((x) => x.id === commentId);
+        if (!c) return;
+        const resizing: Resizing = {
+            id: commentId,
+            ox: touch.clientX,
+            oy: touch.clientY,
             startW: c.w,
             startH: c.h,
         };
@@ -1236,12 +1440,21 @@ export default function App() {
                                             oy: e.clientY,
                                         })
                                     }
+                                    onTouchStart={(e) =>
+                                        beginTouchDrag(e, {
+                                            kind: "comment",
+                                            id: c.id,
+                                            ox: e.touches[0].clientX,
+                                            oy: e.touches[0].clientY,
+                                        })
+                                    }
                                 >
                                     {c.text}
                                 </div>
                                 <div
                                     className="comment-resizer"
                                     onMouseDown={(e) => beginResize(e, c.id)}
+                                    onTouchStart={(e) => beginTouchResize(e, c.id)}
                                 />
                             </div>
                         ))}
@@ -1270,6 +1483,14 @@ export default function App() {
                                                 id: n.id,
                                                 ox: e.clientX,
                                                 oy: e.clientY,
+                                            })
+                                        }
+                                        onTouchStart={(e) =>
+                                            beginTouchDrag(e, {
+                                                kind: "node",
+                                                id: n.id,
+                                                ox: e.touches[0].clientX,
+                                                oy: e.touches[0].clientY,
                                             })
                                         }
                                     >
