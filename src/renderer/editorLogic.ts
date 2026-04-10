@@ -287,6 +287,12 @@ function decompressFromBase64(base64Str: string): string {
     return decoder.decode(decompressedData);
 }
 
+function compileGML(gml: string, node: Node): string {
+    return replaceKeyword(gml, "this", 
+        `character_id[${node.character.constantName}]`)
+        .replace(/\n/g, "\n    ");
+}
+
 export function makeGml(state: EditorState): string {
     let gml = `// 对话文件：${state.title}\n`;
     gml += state.author ? `// 作者：${state.author}\n` : "";
@@ -301,10 +307,10 @@ export function makeGml(state: EditorState): string {
     // 自定义变量定义阶段
     gml += `// --- 自定义变量 ---\n`;
     state.variables.forEach(v => {
-        const value = typeof v.value === "string" && v.type === "string" ? 
-            `"${v.value.replace(/"/g, '')}"` : 
+        const value = typeof v.value === "string" && v.type === "string" ?
+            `"${v.value.replace(/"/g, '')}"` :
             String(v.value);
-        
+
         if (v.persistent)
             gml += `scrDefault("${v.name}", ${value});\n`;
         else
@@ -334,12 +340,12 @@ export function makeGml(state: EditorState): string {
         gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
 
         if (isChoiceResult) {
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            if (n.code) gml += `    ${compileGML(n.code, n)}\n`;
             gml += `    //*/\n`;
             gml += `    return _text[global.language];\n`;
         } else {
             gml += `    displayingText = _text[global.language];\n\n`;
-            if (n.code) gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+            if (n.code) gml += `    ${compileGML(n.code, n)}\n`;
             gml += `    //*/\n`;
         }
         gml += `');\n\n`;
@@ -438,17 +444,119 @@ export function parseGmlEditorData(text: string): EditorState | null {
             idCounter: typeof parsed.idCounter === "number" ? parsed.idCounter : base.idCounter,
             view: parsed.view && typeof parsed.view.x === "number" && typeof parsed.view.y === "number"
                 ? parsed.view : base.view,
-            
+
             title: typeof parsed.title === "string" ? parsed.title : base.title,
             description: typeof parsed.description === "string" ? parsed.description : base.description,
             author: typeof parsed.author === "string" ? parsed.author : base.author,
             version: typeof parsed.version === "string" ? parsed.version : base.version,
             forbiddenExpression: typeof parsed.forbiddenExpression === "string" ?
                 parsed.forbiddenExpression : base.forbiddenExpression,
-            
+
             variables: Array.isArray(parsed.variables) ? parsed.variables : base.variables,
         };
     } catch {
         return null;
     }
+}
+
+function replaceKeyword(code: string, keyword: string, replacement: string): string {
+    const result = [];
+    let i = 0;
+    let state: "default" | "string" | "lineComment" | "blockComment" = "default";
+    let stringQuote = "";  // 记录当前字符串的引号类型（' 或 "）
+
+    while (i < code.length) {
+        const char = code[i];
+
+        switch (state) {
+            // 正常代码（可识别关键字、字符串、注释）
+            case 'default': {
+                // 遇到字符串开始（' 或 "）
+                if (char === "'" || char === '"') {
+                    state = 'string';
+                    stringQuote = char;
+                    result.push(char);
+                    i++;
+                }
+                // 遇到注释开始（// 或 /*）
+                else if (char === '/') {
+                    const nextChar = code[i + 1];
+                    if (nextChar === '/') {
+                        state = 'lineComment';
+                        result.push('//');
+                        i += 2;
+                    } else if (nextChar === '*') {
+                        state = 'blockComment';
+                        result.push('/*');
+                        i += 2;
+                    } else {
+                        result.push(char);
+                        i++;
+                    }
+                }
+                // 遇到标识符开头（字母/_/$）
+                else if (/[a-zA-Z_$]/.test(char)) {
+                    // 收集完整的标识符
+                    let identifier = '';
+                    const startIdx = i;
+                    while (i < code.length && /[a-zA-Z0-9_$]/.test(code[i])) {
+                        identifier += code[i];
+                        i++;
+                    }
+                    // 检查是否是独立的关键字（前后无标识符字符）
+                    const isIndependentThis =
+                        identifier === keyword &&
+                        (startIdx === 0 || !/[a-zA-Z0-9_$]/.test(code[startIdx - 1])) &&
+                        (i === code.length || !/[a-zA-Z0-9_$]/.test(code[i]));
+
+                    result.push(isIndependentThis ? replacement : identifier);
+                }
+                // 其他字符直接保留
+                else {
+                    result.push(char);
+                    i++;
+                }
+                break;
+            }
+
+            // 字符串中（不替换任何内容）
+            case 'string': {
+                if (char === stringQuote) {
+                    // 字符串结束
+                    state = 'default';
+                    result.push(char);
+                    i++;
+                } else {
+                    result.push(char);
+                    i++;
+                }
+                break;
+            }
+
+            // 单行注释中（不替换，直到换行）
+            case 'lineComment': {
+                if (char === '\n') {
+                    state = 'default';
+                }
+                result.push(char);
+                i++;
+                break;
+            }
+
+            // 多行注释中（不替换，直到 */）
+            case 'blockComment': {
+                if (char === '*' && code[i + 1] === '/') {
+                    state = 'default';
+                    result.push('*/');
+                    i += 2;
+                } else {
+                    result.push(char);
+                    i++;
+                }
+                break;
+            }
+        }
+    }
+
+    return result.join('');
 }

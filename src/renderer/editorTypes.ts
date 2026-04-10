@@ -594,7 +594,13 @@ export const defaultProfile: CodeStyleProfile = {
               "exp_angry", "exp_surprise", "exp_expectation", "exp_talkless",
               "exp_underestimate", "exp_ponder"
             ]
-        }      
+        } , {
+            id: "g7", name: "关键变量", type: "variable",
+            colorLight: "#000080", colorDark: "#569CD6",
+            keywords: [
+                "character_id", "this",
+            ]
+        }    
     ]
 };
 
