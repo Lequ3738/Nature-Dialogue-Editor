@@ -46,7 +46,8 @@
         ],
         "win": {
             "target": "portable",
-            "artifactName": "${productName}_${version}.${ext}"
+            "artifactName": "${productName}_${version}.${ext}",
+            "icon": "public/resources/icon.ico"
         }
     },
     "dependencies": {

@@ -12,6 +12,7 @@ function createWindow() {
             contextIsolation: false,
         },
         autoHideMenuBar: true,
+        icon: path.join(__dirname, "./public/resources/icon.png"),
     });
 
     mainWindow.removeMenu();
