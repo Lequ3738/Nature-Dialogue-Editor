@@ -149,3 +149,11 @@
 :root[data-theme="light"] .preset-color.active {
     border-color: #0f172a;
 }
+
+.node.selected .node-header, .node.selected .node-footer {
+    background: color-mix(in srgb, var(--accent) 18%, var(--subtle-bg));
+}
+
+.node.selected .node-body {
+    background: color-mix(in srgb, var(--accent) 5%, var(--subtle-bg));
+}

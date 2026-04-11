@@ -12,6 +12,7 @@ import { ConfigSidebar } from "./config/ConfigSidebar";
 import { EditingCommentWindows, EditingNodeWindows } from "./components/EditingWindow";
 import { MiniMap, MiniMapMeta, MiniMapResize, MiniMapSize, MiniMapViewStyle } from "./components/MiniMap";
 import { TopBar } from "./components/TopBar";
+import TextViewPanel from "./components/TextViewPanel";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -42,6 +43,9 @@ export const PRESET_COLORS = [
 ];
 
 type FileHandle = FileSystemFileHandle;
+
+type ViewMode = "graph" | "text";
+type SelectionBox = { x1: number; y1: number; x2: number; y2: number } | null;
 
 function ensureGmlName(name: string): string {
     const trimmed = (name || "").trim();
@@ -74,6 +78,27 @@ function hexToRgba(hex: string, alpha: number): string {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
     return `rgba(0, 0, 0, ${alpha})`;
+}
+
+function clientToWorld(clientX: number, clientY: number, view: { x: number; y: number; zoom: number }): { x: number; y: number } {
+    return {
+        x: (clientX - view.x) / view.zoom,
+        y: (clientY - view.y) / view.zoom,
+    };
+}
+
+function normalizeClientRect(rect: SelectionBox): { left: number; top: number; right: number; bottom: number } | null {
+    if (!rect) return null;
+    return {
+        left: Math.min(rect.x1, rect.x2),
+        top: Math.min(rect.y1, rect.y2),
+        right: Math.max(rect.x1, rect.x2),
+        bottom: Math.max(rect.y1, rect.y2),
+    };
+}
+
+function rectsIntersect(a: { left: number; top: number; right: number; bottom: number }, b: DOMRect): boolean {
+    return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
 export function getIpcRenderer(): any | null {
@@ -149,11 +174,28 @@ export default function App() {
         stateRef.current = state;
     }, [state]);
 
+    useEffect(() => {
+        setSelectedNodeIds((prev) => prev.filter((id) => state.nodes.some((node) => node.id === id)));
+    }, [state.nodes]);
+
     const [editingId, setEditingId] = useState<number | null>(null);
     const [draft, setDraft] = useState<ModalDraft>({ cn: "", en: "", code: "", color: "#7289da", character: characterNone });
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
+    const [viewMode, setViewMode] = useState<ViewMode>("graph");
+    const [selectedNodeIds, setSelectedNodeIds] = useState<number[]>([]);
+    const [selectionBox, setSelectionBox] = useState<SelectionBox>(null);
+    const selectionDragRef = useRef<null | {
+        started: boolean;
+        additive: boolean;
+        startX: number;
+        startY: number;
+    }>(null);
+    const viewModeRef = useRef<ViewMode>("graph");
+    useEffect(() => {
+        viewModeRef.current = viewMode;
+    }, [viewMode]);
 
     // 设置面板中的编辑状态
     const [draftProfile, setDraftProfile] = useState<CodeStyleProfile | null>(null);
@@ -831,22 +873,63 @@ export default function App() {
         const viewport = viewportRef.current;
         if (!viewport) return;
 
+        const isInteractiveTarget = (target: EventTarget | null) => {
+            if (!(target instanceof HTMLElement)) return false;
+            return !!target.closest(
+                ".node, .comment-box, .port, .comment-handle, .comment-resizer, .file-menu, #toolbar"
+            );
+        };
+
         const onMouseDown = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
 
             // Middle mouse button panning.
             if (e.button === 1) {
                 e.preventDefault();
+                selectionDragRef.current = null;
+                setSelectionBox(null);
                 setState((prev) => ({
                     ...prev,
                     isPanning: true,
                     lastMouse: { x: e.clientX, y: e.clientY },
+                    dragTarget: null,
+                    resizing: null,
+                }));
+                return;
+            }
+
+            if (e.button === 0 && viewModeRef.current === "graph" && !isInteractiveTarget(e.target)) {
+                const additive = e.shiftKey;
+                selectionDragRef.current = {
+                    started: false,
+                    additive,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                };
+                setSelectionBox({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
+                setState((prev) => ({
+                    ...prev,
+                    isPanning: false,
+                    lastMouse: undefined,
+                    dragTarget: null,
+                    resizing: null,
                 }));
             }
         };
 
         const onMouseMove = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
+
+            const selectionDrag = selectionDragRef.current;
+            if (selectionDrag) {
+                selectionDrag.started = true;
+                setSelectionBox({
+                    x1: selectionDrag.startX,
+                    y1: selectionDrag.startY,
+                    x2: e.clientX,
+                    y2: e.clientY,
+                });
+            }
 
             setState((prev) => {
                 let next = prev;
@@ -874,6 +957,15 @@ export default function App() {
                             nodes: next.nodes.map((n) =>
                                 n.id === drag.id ? { ...n, x: n.x + dx, y: n.y + dy } : n
                             ),
+                            dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
+                        };
+                    } else if (drag.kind === "nodeGroup") {
+                        next = {
+                            ...next,
+                            nodes: next.nodes.map((n) => {
+                                const start = drag.positions[n.id];
+                                return start ? { ...n, x: start.x + dx, y: start.y + dy } : n;
+                            }),
                             dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
                         };
                     } else {
@@ -909,8 +1001,35 @@ export default function App() {
             });
         };
 
-        const onMouseUp = () => {
+        const onMouseUp = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
+            
+            const selectionDrag = selectionDragRef.current;
+            if (selectionDrag) {
+                const rect = normalizeClientRect({
+                    x1: selectionDrag.startX,
+                    y1: selectionDrag.startY,
+                    x2: e.clientX,
+                    y2: e.clientY,
+                });
+                if (rect) {
+                    const hitIds = stateRef.current.nodes
+                        .filter((node) => {
+                            const el = document.getElementById(`node-${node.id}`);
+                            return el ? rectsIntersect(rect, el.getBoundingClientRect()) : false;
+                        })
+                        .map((node) => node.id);
+
+                    setSelectedNodeIds((prev) => {
+                        if (selectionDrag.additive) {
+                            return Array.from(new Set([...prev, ...hitIds]));
+                        }
+                        return hitIds;
+                    });
+                }
+                selectionDragRef.current = null;
+                setSelectionBox(null);
+            }
 
             setState((prev) => ({
                 ...prev,
@@ -1109,6 +1228,33 @@ export default function App() {
         if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
+        
+        if (target.kind === "node") {
+            const isAlreadySelected = selectedNodeIds.includes(target.id);
+            const nextSelected = isAlreadySelected ? selectedNodeIds : [target.id];
+            setSelectedNodeIds(nextSelected);
+
+            if (nextSelected.length > 1) {
+                const positions: Record<number, { x: number; y: number }> = {};
+                stateRef.current.nodes.forEach((node) => {
+                    if (nextSelected.includes(node.id)) {
+                        positions[node.id] = { x: node.x, y: node.y };
+                    }
+                });
+                setState((prev) => ({
+                    ...prev,
+                    dragTarget: {
+                        kind: "nodeGroup",
+                        ids: nextSelected,
+                        positions,
+                        ox: e.clientX,
+                        oy: e.clientY,
+                    },
+                }));
+                return;
+            }
+        }
+
         setState((prev) => ({ ...prev, dragTarget: target }));
     };
 
@@ -1258,6 +1404,9 @@ export default function App() {
                 return;
             }
             suppressDirtyRef.current = true;
+            selectionDragRef.current = null;
+            setSelectionBox(null);
+            setSelectedNodeIds([]);
             setState(parsed);
             setEditingId(null);
             setDirty(false);
@@ -1293,6 +1442,9 @@ export default function App() {
             const parsed = parseGmlEditorData(content);
             if (parsed) {
                 suppressDirtyRef.current = true;
+                selectionDragRef.current = null;
+                setSelectionBox(null);
+                setSelectedNodeIds([]);
                 setState(parsed);
                 setCurrentFilePath(filePath);
                 setCurrentFileName(await ipc.invoke('editor:get-filename', filePath));
@@ -1399,9 +1551,11 @@ export default function App() {
                 setDraftProjectState={setDraftProjectState}
                 state={state}
                 setSettingsOpen={setSettingsOpen}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
             />
 
-            <div id="viewport" ref={viewportRef}>
+            <div id="viewport" ref={viewportRef} style={{ display: viewMode === "graph" ? "block" : "none" }}>
                 <canvas
                     id="line-canvas"
                     ref={lineCanvasRef}
@@ -1471,7 +1625,8 @@ export default function App() {
                                 <div
                                     key={n.id}
                                     id={`node-${n.id}`}
-                                    className={`node ${isStart ? "start-node" : ""}`}
+                                    className={`node ${isStart ? "start-node" : ""} ${selectedNodeIds.includes(n.id) ? "selected" : ""}`}
+                                    onMouseDown={(e) => e.stopPropagation()}
                                     style={{
                                         left: n.x,
                                         top: n.y,
@@ -1676,9 +1831,49 @@ export default function App() {
                         })}
                     </div>
                 </div>
+                {selectionBox ? (
+                    <div
+                        style={{
+                            position: "fixed",
+                            left: Math.min(selectionBox.x1, selectionBox.x2),
+                            top: Math.min(selectionBox.y1, selectionBox.y2),
+                            width: Math.abs(selectionBox.x2 - selectionBox.x1),
+                            height: Math.abs(selectionBox.y2 - selectionBox.y1),
+                            border: "1px solid var(--accent)",
+                            background: theme === "dark" ? "rgba(114, 137, 218, 0.16)" : "rgba(114, 137, 218, 0.12)",
+                            boxShadow: "0 0 0 1px rgba(0,0,0,0.06)",
+                            zIndex: 2500,
+                            pointerEvents: "none",
+                        }}
+                    />
+                ) : null}
             </div>
 
-            {edgeMenu ? (
+            {viewMode === "text" ? (
+                <TextViewPanel
+                    theme={theme}
+                    state={state}
+                    selectedNodeIds={selectedNodeIds}
+                    setState={setState}
+                    onFocusGraphNode={(id) => {
+                        setViewMode("graph");
+                        setSelectedNodeIds([id]);
+                        const node = stateRef.current.nodes.find((n) => n.id === id);
+                        if (node) {
+                            setState((prev) => ({
+                                ...prev,
+                                view: {
+                                    ...prev.view,
+                                    x: window.innerWidth / 2 - (node.x + 130) * prev.view.zoom,
+                                    y: window.innerHeight / 2 - (node.y + 60) * prev.view.zoom,
+                                },
+                            }));
+                        }
+                    }}
+                />
+            ) : null}
+
+            {viewMode === "graph" && edgeMenu ? (
                 <div
                     style={{
                         position: "fixed",
@@ -1773,15 +1968,17 @@ export default function App() {
             ) : null}
 
             {/* 缩略图 */}
-            <MiniMap
-                zoomPercent={zoomPercent}
-                minimapSize={minimapSize}
-                minimapCanvasRef={minimapCanvasRef}
-                minimapMeta={minimapMeta}
-                minimapResizeRef={minimapResizeRef}
-                minimapViewStyle={minimapViewStyle}
-                setState={setState}
-            />
+            {viewMode === "graph" ? (
+                <MiniMap
+                    zoomPercent={zoomPercent}
+                    minimapSize={minimapSize}
+                    minimapCanvasRef={minimapCanvasRef}
+                    minimapMeta={minimapMeta}
+                    minimapResizeRef={minimapResizeRef}
+                    minimapViewStyle={minimapViewStyle}
+                    setState={setState}
+                />
+            ) : null}
 
             {/* 节点编辑界面 */}
             {editingCommentId !== null && 

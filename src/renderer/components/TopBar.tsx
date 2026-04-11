@@ -6,7 +6,7 @@ export function TopBar({
     theme, setState, windowSize, fileMenuOpen, setFileMenuOpen, handleOpenClick, 
     handleSave, handleSaveAs, fileMenuRef, isNewEmpty, fileInputRef, onImport,
     handleThemeChange, setDraftProfile, codeProfile, defaultProfile, 
-    setDraftProjectState, state, setSettingsOpen
+    setDraftProjectState, state, setSettingsOpen, viewMode, setViewMode
 } : {
     theme: 'light' | 'dark',
     setState: (value: React.SetStateAction<EditorState>) => void,
@@ -26,7 +26,9 @@ export function TopBar({
     defaultProfile: CodeStyleProfile,
     setDraftProjectState: (value: React.SetStateAction<ProjectData | null>) => void,
     state: EditorState,
-    setSettingsOpen: (value: React.SetStateAction<boolean>) => void
+    setSettingsOpen: (value: React.SetStateAction<boolean>) => void,
+    viewMode: 'graph' | 'text',
+    setViewMode: (value: React.SetStateAction<'graph' | 'text'>) => void,
 }) {
     return (
         <div id="toolbar">
@@ -150,12 +152,21 @@ export function TopBar({
             </button>
             <button
                 className="theme-toggle"
+                onClick={() => setViewMode((prev) => (prev === "graph" ? "text" : "graph"))}
+                title={viewMode === "graph" ? "切换到文本视图" : "切换到节点视图"}
+            >
+                {viewMode === "graph" ? "📝" : "🧩"}
+            </button>
+            <button
+                className="theme-toggle"
                 onClick={() => handleThemeChange(theme === "dark" ? "light" : "dark")}
+                title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
             >
                 {theme === "dark" ? "🌙" : "🌞"}
             </button>
             <button
                 className="theme-toggle"
+                title="设置"
                 onClick={() => {
                     // 将当前主题的配置克隆一份到草稿中
                     setDraftProfile(codeProfile || defaultProfile);

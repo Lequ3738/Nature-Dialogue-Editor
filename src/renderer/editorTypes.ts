@@ -42,6 +42,7 @@ export interface ViewState {
 
 export type DragTarget =
     | { kind: "node"; id: number; ox: number; oy: number }
+    | { kind: "nodeGroup"; ids: number[]; positions: Record<number, { x: number; y: number }>; ox: number; oy: number }
     | { kind: "comment"; id: string; ox: number; oy: number };
 
 export interface Connecting {
