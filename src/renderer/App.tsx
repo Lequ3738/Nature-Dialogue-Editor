@@ -313,9 +313,9 @@ export default function App() {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
-    useEffect(() => {
-        if (viewMode === "graph") {  // 切回节点视图时强制触发重绘，解决缩略图空白
-            setTick(t => t + 1);
+    useLayoutEffect(() => {
+        if (viewMode === "graph") {
+            setTick((t) => t + 1);
         }
     }, [viewMode]);
 
@@ -440,12 +440,12 @@ export default function App() {
 
     // Initialize canvas sizes.
     useEffect(() => {
-        if (lineCanvasRef.current) {
+        /* if (lineCanvasRef.current) {
             const dpr = window.devicePixelRatio || 1;
             const rect = lineCanvasRef.current.getBoundingClientRect();
             lineCanvasRef.current.width = rect.width * dpr;
             lineCanvasRef.current.height = rect.height * dpr;
-        }
+        } */
         // 仅节点视图下初始化缩略图画布，避免非激活状态下尺寸错误
         if (minimapCanvasRef.current && viewMode === "graph") {
             const dpr = window.devicePixelRatio || 1;
@@ -548,6 +548,8 @@ export default function App() {
 
     // Draw edges whenever nodes/edges change.
     useLayoutEffect(() => {
+        if (viewMode !== "graph") return;
+
         const canvas = lineCanvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
@@ -557,8 +559,8 @@ export default function App() {
 
         // 直接获取画布当前的布局尺寸
         const rect = canvas.getBoundingClientRect();
-        const logicalWidth = rect.width;
-        const logicalHeight = rect.height;
+        const logicalWidth = rect.width || window.innerWidth;
+        const logicalHeight = rect.height || window.innerHeight;
 
         // 使用 Math.round 确保像素对齐，且只更新属性，不碰 style
         const targetBufferWidth = Math.round(logicalWidth * dpr);
@@ -649,7 +651,7 @@ export default function App() {
 
             drawArrowHead(ctx, end.x, end.y, angle, 18 * zoom);
         });
-    }, [state.edges, state.nodes, state.view, windowSize, tick]);
+    }, [state.edges, state.nodes, state.view, windowSize, tick, viewMode, ]);
 
     // Draw minimap: render a scaled snapshot of the current workspace.
     useEffect(() => {
@@ -1663,6 +1665,7 @@ export default function App() {
                     setState={setState}
                     onFocusGraphNode={(id) => {
                         setViewMode("graph");
+                        setTick(t => t + 1);
                         setSelectedNodeIds([id]);
                         const node = stateRef.current.nodes.find((n) => n.id === id);
                         if (node) {

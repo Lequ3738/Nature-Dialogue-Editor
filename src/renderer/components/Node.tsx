@@ -85,6 +85,7 @@ export const DraggableNode = React.memo(({
                 <div
                     className="node-body has-tooltip"
                     title={n.type === "node" && n.code ? `执行代码：\n\n${n.code}` : undefined}
+                    style={{color: "var(--text)"}}
                 >
                     {isCond ? (
                         n.code || <><span style={{ color: "#888" }}>请添加有效的表达式。</span></>
