@@ -13,6 +13,7 @@ import { EditingCommentWindows, EditingNodeWindows } from "./components/EditingW
 import { MiniMap, MiniMapMeta, MiniMapResize, MiniMapSize, MiniMapViewStyle } from "./components/MiniMap";
 import { TopBar } from "./components/TopBar";
 import TextViewPanel from "./components/TextViewPanel";
+import { DraggableNode } from "./components/Node";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -304,15 +305,19 @@ export default function App() {
     const isNewEmpty = isNewUntitled && !hasWorkspaceContent;
 
     const [settingsTab, setSettingsTab] = useState<ConfigTabs>("info");
-
-    // 窗口缩放监听
-    const [tick, setTick] = useState(0);
+    const [tick, setTick] = useState(0);  // 窗口缩放监听
 
     useEffect(() => {
         const handleResize = () => setTick(t => t + 1);
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
     }, []);
+
+    useEffect(() => {
+        if (viewMode === "graph") {  // 切回节点视图时强制触发重绘，解决缩略图空白
+            setTick(t => t + 1);
+        }
+    }, [viewMode]);
 
     // 获取节点在屏幕上的真实宽高的辅助函数
     const getNodeBounds = (n: Node) => {
@@ -436,15 +441,18 @@ export default function App() {
     // Initialize canvas sizes.
     useEffect(() => {
         if (lineCanvasRef.current) {
-            lineCanvasRef.current.width = window.innerWidth;
-            lineCanvasRef.current.height = window.innerHeight;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = lineCanvasRef.current.getBoundingClientRect();
+            lineCanvasRef.current.width = rect.width * dpr;
+            lineCanvasRef.current.height = rect.height * dpr;
         }
-        if (minimapCanvasRef.current) {
+        // 仅节点视图下初始化缩略图画布，避免非激活状态下尺寸错误
+        if (minimapCanvasRef.current && viewMode === "graph") {
             const dpr = window.devicePixelRatio || 1;
             minimapCanvasRef.current.width = minimapSize.w * dpr;
             minimapCanvasRef.current.height = minimapSize.h * dpr;
         }
-    }, [minimapSize.h, minimapSize.w]);
+    }, [minimapSize.h, minimapSize.w, viewMode, windowSize, tick]);
 
     const connectingFromId = state.connecting?.fromId ?? null;
 
@@ -516,16 +524,10 @@ export default function App() {
             viewRect: { left: viewLeft, top: viewTop, width: viewW, height: viewH },
         };
     }, [
-        minimapSize.h,
-        minimapSize.w,
-        state.nodes,
-        state.comments,
-        state.view.x,
-        state.view.y,
-        state.view.zoom,
-        windowSize.w,
-        windowSize.h,
-        tick
+        minimapSize.h, minimapSize.w,
+        state.nodes, state.comments, state.view.x, state.view.y, state.view.zoom,
+        windowSize.w, windowSize.h,
+        tick, viewMode,
     ]);
 
     const minimapViewStyle = useMemo<MiniMapViewStyle>(
@@ -652,7 +654,7 @@ export default function App() {
     // Draw minimap: render a scaled snapshot of the current workspace.
     useEffect(() => {
         const canvas = minimapCanvasRef.current;
-        if (!canvas) return;
+        if (!canvas || viewMode !== "graph") return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
@@ -867,7 +869,10 @@ export default function App() {
         state.edges.forEach(drawEdge);
         // Nodes (front)
         state.nodes.forEach((n) => drawNode(n, connectingFromId === n.id));
-    }, [state.nodes, state.comments, state.edges, minimapMeta, theme, connectingFromId, tick]);
+    }, [
+        state.nodes, state.comments, state.edges,
+        minimapMeta, theme, connectingFromId, tick
+    ]);
 
     useEffect(() => {
         const viewport = viewportRef.current;
@@ -919,7 +924,7 @@ export default function App() {
 
         const onMouseMove = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
-
+            
             const selectionDrag = selectionDragRef.current;
             if (selectionDrag) {
                 selectionDrag.started = true;
@@ -933,7 +938,6 @@ export default function App() {
 
             setState((prev) => {
                 let next = prev;
-
                 if (prev.isPanning && prev.lastMouse) {
                     next = {
                         ...next,
@@ -945,13 +949,12 @@ export default function App() {
                         lastMouse: { x: e.clientX, y: e.clientY },
                     };
                 }
-
                 if (prev.dragTarget) {
                     const drag = prev.dragTarget;
                     const dx = (e.clientX - drag.ox) / prev.view.zoom;
                     const dy = (e.clientY - drag.oy) / prev.view.zoom;
-
                     if (drag.kind === "node") {
+                        // 单个节点
                         next = {
                             ...next,
                             nodes: next.nodes.map((n) =>
@@ -960,15 +963,17 @@ export default function App() {
                             dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
                         };
                     } else if (drag.kind === "nodeGroup") {
+                        // 多选节点：不更新 ox/oy，保持初始锚点
                         next = {
                             ...next,
                             nodes: next.nodes.map((n) => {
                                 const start = drag.positions[n.id];
                                 return start ? { ...n, x: start.x + dx, y: start.y + dy } : n;
                             }),
-                            dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
+                            dragTarget: drag,
                         };
                     } else {
+                        // 注释框
                         next = {
                             ...next,
                             comments: next.comments.map((c) =>
@@ -978,7 +983,6 @@ export default function App() {
                         };
                     }
                 }
-
                 if (prev.resizing) {
                     const zoom = prev.view.zoom;
                     const deltaW = (e.clientX - prev.resizing.ox) / zoom;
@@ -996,7 +1000,6 @@ export default function App() {
                         ),
                     };
                 }
-
                 return next;
             });
         };
@@ -1019,7 +1022,6 @@ export default function App() {
                             return el ? rectsIntersect(rect, el.getBoundingClientRect()) : false;
                         })
                         .map((node) => node.id);
-
                     setSelectedNodeIds((prev) => {
                         if (selectionDrag.additive) {
                             return Array.from(new Set([...prev, ...hitIds]));
@@ -1030,7 +1032,6 @@ export default function App() {
                 selectionDragRef.current = null;
                 setSelectionBox(null);
             }
-
             setState((prev) => ({
                 ...prev,
                 isPanning: false,
@@ -1224,7 +1225,6 @@ export default function App() {
     }, []);
 
     const beginDrag = (e: React.MouseEvent, target: DragTarget) => {
-        // Only left button drags objects. Middle button reserved for viewport panning.
         if (e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
@@ -1233,7 +1233,6 @@ export default function App() {
             const isAlreadySelected = selectedNodeIds.includes(target.id);
             const nextSelected = isAlreadySelected ? selectedNodeIds : [target.id];
             setSelectedNodeIds(nextSelected);
-
             if (nextSelected.length > 1) {
                 const positions: Record<number, { x: number; y: number }> = {};
                 stateRef.current.nodes.forEach((node) => {
@@ -1254,7 +1253,6 @@ export default function App() {
                 return;
             }
         }
-
         setState((prev) => ({ ...prev, dragTarget: target }));
     };
 
@@ -1618,215 +1616,23 @@ export default function App() {
                         ))}
 
                         {state.nodes.map((n) => {
-                            const isCond = n.type === "condition";
-                            const isStart = n.type === "start";
                             const isConnecting = connectingFromId === n.id;
+                            const isSelected = selectedNodeIds.length > 1 && selectedNodeIds.includes(n.id);
+                            
                             return (
-                                <div
+                                <DraggableNode
                                     key={n.id}
-                                    id={`node-${n.id}`}
-                                    className={`node ${isStart ? "start-node" : ""} ${selectedNodeIds.includes(n.id) ? "selected" : ""}`}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    style={{
-                                        left: n.x,
-                                        top: n.y,
-                                        borderColor: n.color,
-                                        boxShadow: isConnecting ? `0 0 20px ${n.color}` : undefined,
-                                    }}
-                                >
-                                    <div
-                                        className={`node-header ${isStart ? "start-node-header" : ""}`}
-                                        onMouseDown={(e) =>
-                                            beginDrag(e, {
-                                                kind: "node",
-                                                id: n.id,
-                                                ox: e.clientX,
-                                                oy: e.clientY,
-                                            })
-                                        }
-                                        onTouchStart={(e) =>
-                                            beginTouchDrag(e, {
-                                                kind: "node",
-                                                id: n.id,
-                                                ox: e.touches[0].clientX,
-                                                oy: e.touches[0].clientY,
-                                            })
-                                        }
-                                    >
-                                        <span style={{ textAlign: "center" }}> {
-                                            isStart ?
-                                                `#${n.id} 开始` :
-                                                (isCond ? `#${n.id} 条件` : 
-                                                    (n.type === "end" ? `#${n.id} 结束` : 
-                                                        `#${n.id} 对话：${n.character.name}`
-                                                    )
-                                                )
-                                        }
-                                        </span>
-                                        {
-                                            !isStart ?
-                                                (
-                                                    <span
-                                                        style={{ cursor: "pointer" }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            openModal(n.id);
-                                                        }}
-                                                    >
-                                                        ⚙️
-                                                    </span>
-                                                ) : null
-                                        }
-                                    </div>
-
-                                    {
-                                        !isStart ?
-                                            (
-                                                <div className="node-body has-tooltip"
-                                                    title={ n.type === "node" && n.code ? `执行代码：\n\n${n.code}` : undefined }
-                                                >
-                                                    {
-                                                        isCond ? (
-                                                            n.code ? n.code :
-                                                                <><span style={{ color: "#888" }}>请添加有效的表达式。</span></>
-                                                        ) : (
-                                                            n.type === "end" ? (
-                                                                n.code ? n.code :
-                                                                    <><span style={{ color: "#888" }}>请添加有效的代码语句。</span></>
-                                                            ) :
-                                                                <>
-                                                                    <span style={{ color: "#888" }}>中文：</span> {
-                                                                        n.cn ? n.cn :
-                                                                            <><span style={{ color: "#888" }}>无内容。</span></>
-                                                                    }
-                                                                    <hr style={{ opacity: 0.2 }} />
-                                                                    <span style={{ color: "#888" }}>英文：</span> {
-                                                                        n.en ? n.en :
-                                                                            <><span style={{ color: "#888" }}>无内容。</span></>
-                                                                    }
-                                                                </>
-                                                        )
-                                                    }
-                                                </div>
-                                            ) : null
-                                    }
-
-                                    <div className={`node-footer ${isStart ? "start-node-footer" : ""}`}>
-                                        {
-                                            isCond ? (
-                                                <>
-                                                    <button
-                                                        className={`port 
-                                                    ${hasEdge(state, n.id, "true") ? "connected" : ""}
-                                                `}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setState((prev) =>
-                                                                startConnect(prev, n.id, "true")
-                                                            );
-                                                        }}
-                                                        onContextMenu={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            setState((prev) => ({
-                                                                ...prev,
-                                                                edges: prev.edges.filter(
-                                                                    (ed) =>
-                                                                        !(
-                                                                            ed.fromId === n.id &&
-                                                                            ed.type === "true"
-                                                                        )
-                                                                ),
-                                                            }));
-                                                        }}
-                                                        title="右键删除 TRUE 连线"
-                                                    >
-                                                        TRUE
-                                                    </button>
-                                                    <button
-                                                        className={
-                                                            `port ${hasEdge(state, n.id, "false") ? "connected" : ""}
-                                                    FALSE
-                                                `}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setState((prev) =>
-                                                                startConnect(prev, n.id, "false")
-                                                            );
-                                                        }}
-                                                        onContextMenu={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            setState((prev) => ({
-                                                                ...prev,
-                                                                edges: prev.edges.filter(
-                                                                    (ed) =>
-                                                                        !(
-                                                                            ed.fromId === n.id &&
-                                                                            ed.type === "false"
-                                                                        )
-                                                                ),
-                                                            }));
-                                                        }}
-                                                        title="右键删除 FALSE 连线"
-                                                    >
-                                                        FALSE
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button
-                                                        className={`port ${hasEdge(state, n.id, "default") ? "connected" : ""}`}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setState((prev) =>
-                                                                startConnect(prev, n.id, "default")
-                                                            );
-                                                        }}
-                                                        onContextMenu={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            if (n.type === "start") {
-                                                                setState((prev) => ({
-                                                                    ...prev,
-                                                                    edges: prev.edges.filter(
-                                                                        (ed) =>
-                                                                            !(
-                                                                                ed.fromId === n.id &&
-                                                                                ed.type === "default"
-                                                                            )
-                                                                    ),
-                                                                }));
-                                                            } else {
-                                                                // 普通节点允许多条连线：弹出菜单让用户自由选择删哪条
-                                                                setEdgeMenu({
-                                                                    fromId: n.id,
-                                                                    x: e.clientX,
-                                                                    y: e.clientY,
-                                                                });
-                                                            }
-                                                        }}
-                                                        title={n.type === "end" ? "" : "右键删除 NEXT 连线"}
-                                                    >
-                                                        {n.type === "end" ? "结束" : "NEXT →"}
-                                                    </button>
-                                                    {
-                                                        isStart ? (
-                                                            <span
-                                                                style={{ cursor: "pointer" }}
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    openModal(n.id);
-                                                                }}
-                                                            >
-                                                                ⚙️
-                                                            </span>
-                                                        ) : null
-                                                    }
-                                                </>
-                                            )}
-                                    </div>
-                                </div>
+                                    n={n}
+                                    isSelected={isSelected}
+                                    isConnecting={isConnecting}
+                                    theme={theme}
+                                    state={state}
+                                    beginDrag={beginDrag}
+                                    beginTouchDrag={beginTouchDrag}
+                                    openModal={openModal}
+                                    setState={setState}
+                                    setEdgeMenu={setEdgeMenu}
+                                />
                             );
                         })}
                     </div>

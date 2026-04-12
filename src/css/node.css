@@ -150,10 +150,21 @@
     border-color: #0f172a;
 }
 
-.node.selected .node-header, .node.selected .node-footer {
-    background: color-mix(in srgb, var(--accent) 18%, var(--subtle-bg));
+.node.selected {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px currentColor, 0 0 16px 4px color-mix(in srgb, currentColor 60%, transparent);
+    border-color: currentColor;
+    border-width: 3px;
+    z-index: 20;
+    transform: scale(1.01);
+    transition: all 0.15s ease-out;
+
+    -webkit-text-fill-color: currentColor;
 }
 
-.node.selected .node-body {
-    background: color-mix(in srgb, var(--accent) 5%, var(--subtle-bg));
+.node.selected .node-header {
+    font-weight: 700;
+    background: color-mix(in srgb, currentColor 10%, var(--subtle-bg));
+}
+.node.selected .node-footer {
+    background: color-mix(in srgb, currentColor 8%, var(--subtle-bg));
 }
