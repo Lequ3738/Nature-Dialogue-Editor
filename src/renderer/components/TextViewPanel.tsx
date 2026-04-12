@@ -390,6 +390,7 @@ export default function TextViewPanel({
                                                     borderColor: matched && fieldMatch(node.cn, searchText, caseSensitive, wholeWord) ? "var(--accent)" : undefined,
                                                     boxSizing: 'border-box',
                                                 }}
+                                                spellCheck="false"
                                             />
                                         </label>
                                         <label style={{ display: "grid", gap: 6 }}>
@@ -408,6 +409,7 @@ export default function TextViewPanel({
                                                     borderColor: matched && fieldMatch(node.en, searchText, caseSensitive, wholeWord) ? "var(--accent)" : undefined,
                                                     boxSizing: 'border-box',
                                                 }}
+                                                spellCheck="false"
                                             />
                                         </label>
                                         <label style={{ display: "grid", gap: 6 }}>
@@ -427,6 +429,7 @@ export default function TextViewPanel({
                                                     borderColor: matched && fieldMatch(node.code, searchText, caseSensitive, wholeWord) ? "var(--accent)" : undefined,
                                                     boxSizing: 'border-box',
                                                 }}
+                                                spellCheck="false"
                                             />
                                         </label>
                                     </div>
