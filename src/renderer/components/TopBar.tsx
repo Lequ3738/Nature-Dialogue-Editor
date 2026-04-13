@@ -147,7 +147,7 @@ export function TopBar({
                         : undefined,
                 }}
             >
-                ▦
+                🪟
             </button>
             <button
                 className="theme-toggle"

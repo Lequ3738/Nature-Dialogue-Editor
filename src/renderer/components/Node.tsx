@@ -42,6 +42,9 @@ export const DraggableNode = React.memo(({
             style={{
                 left: n.x,
                 top: n.y,
+                transform: 'translate(-50%, -50%)',
+                transformOrigin: 'center center',
+                transition: state.dragTarget ? 'none' : 'left 0.15s ease-out, top 0.15s ease-out',
                 borderColor: n.color,
                 color: n.color,
                 boxShadow: isConnecting ? `0 0 20px ${n.color}` : undefined,

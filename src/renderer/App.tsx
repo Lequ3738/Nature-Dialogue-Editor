@@ -46,7 +46,6 @@ export const PRESET_COLORS = [
 ];
 
 type FileHandle = FileSystemFileHandle;
-
 type ViewMode = "graph" | "text";
 type SelectionBox = { x1: number; y1: number; x2: number; y2: number } | null;
 
@@ -114,43 +113,43 @@ export function getIpcRenderer(): any | null {
         return null;
     }
 }
-
+// ========== 修正后的getNodeAnchor函数 start ==========
 function getNodeAnchor(
     from: { x: number; y: number; w: number; h: number },
     to: { x: number; y: number; w: number; h: number },
     isSource: boolean
 ): { x: number; y: number; nx: number; ny: number } {
-    const centerFrom = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-    const centerTo = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+    // 节点x,y已为中心坐标，无需额外计算宽高偏移
+    const centerFrom = { x: from.x, y: from.y };
+    const centerTo = { x: to.x, y: to.y };
     const dx = centerTo.x - centerFrom.x;
     const dy = centerTo.y - centerFrom.y;
-
     const horizontal = Math.abs(dx) > Math.abs(dy);
 
     if (isSource) {
         if (horizontal) {
             // 从右侧出 (nx: 1), 否则从左侧出 (nx: -1)
             return dx >= 0
-                ? { x: from.x + from.w, y: centerFrom.y, nx: 1, ny: 0 }
-                : { x: from.x, y: centerFrom.y, nx: -1, ny: 0 };
+                ? { x: from.x + from.w / 2, y: centerFrom.y, nx: 1, ny: 0 }
+                : { x: from.x - from.w / 2, y: centerFrom.y, nx: -1, ny: 0 };
         }
         // 从底部出 (ny: 1), 否则从顶部出 (ny: -1)
         return dy >= 0
-            ? { x: centerFrom.x, y: from.y + from.h, nx: 0, ny: 1 }
-            : { x: centerFrom.x, y: from.y, nx: 0, ny: -1 };
+            ? { x: centerFrom.x, y: from.y + from.h / 2, nx: 0, ny: 1 }
+            : { x: centerFrom.x, y: from.y - from.h / 2, nx: 0, ny: -1 };
     }
 
     // 对于目标节点 (Destination)，法线方向应该向外
     if (horizontal) {
         return dx >= 0
-            ? { x: to.x, y: centerTo.y, nx: -1, ny: 0 }
-            : { x: to.x + to.w, y: centerTo.y, nx: 1, ny: 0 };
+            ? { x: to.x - to.w / 2, y: centerTo.y, nx: -1, ny: 0 }
+            : { x: to.x + to.w / 2, y: centerTo.y, nx: 1, ny: 0 };
     }
     return dy >= 0
-        ? { x: centerTo.x, y: to.y, nx: 0, ny: -1 }
-        : { x: centerTo.x, y: to.y + to.h, nx: 0, ny: 1 };
+        ? { x: centerTo.x, y: to.y - to.h / 2, nx: 0, ny: -1 }
+        : { x: centerTo.x, y: to.y + to.h / 2, nx: 0, ny: 1 };
 }
-
+// ========== 修正后的getNodeAnchor函数 end ==========
 // 计算两个触摸点的距离
 function getTouchDistance(touch1: Touch, touch2: Touch): number {
     return Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
@@ -173,6 +172,8 @@ export default function App() {
     const stateRef = useRef(state);
     const suppressDirtyRef = useRef(false);
     const firstStateRef = useRef(true);
+    // ========== 新增：动画帧ref，用于控制缓动动画 ==========
+    const animationFrameRef = useRef<number | null>(null);
     useEffect(() => {
         stateRef.current = state;
     }, [state]);
@@ -237,8 +238,6 @@ export default function App() {
         } catch (e) {
             console.error("加载配置失败:", e);
         }
-
-        console.log("Loaded code profile:", profile);
         return profile;
     });
 
@@ -267,7 +266,6 @@ export default function App() {
         reader.onload = (event) => {
             try {
                 const imported = JSON.parse(event.target?.result as string) as CodeStyleProfile;
-
                 // 基础校验：确保包含必要的 keywordGroups 字段
                 if (imported.keywordGroups) {
                     setCodeProfile(validateProfile(imported));
@@ -321,6 +319,83 @@ export default function App() {
         dragY: 0,
         dragHeight: 0,
     });
+
+    // ========== 新增：组件卸载时清理动画帧 ==========
+    useEffect(() => {
+        return () => {
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+        };
+    }, []);
+
+    // ========== 新增：节点吸附缓动动画核心函数 ==========
+    const animateNodeToSnapPosition = (
+        nodes: Node[],
+        targetNodes: Node[],
+        enableSnap: boolean,
+        onUpdate: (nodes: Node[]) => void,
+        onComplete: () => void
+    ) => {
+        if (!enableSnap || animationFrameRef.current) return;
+
+        const startTime = performance.now();
+        const animationDuration = 150; // 动画时长，可根据手感调整
+        const startNodes = [...nodes];
+
+        // 构建每个节点的起始和目标坐标映射
+        const nodeAnimations = startNodes.map((startNode) => {
+            const targetNode = targetNodes.find(n => n.id === startNode.id);
+            if (!targetNode) return null;
+            return {
+                id: startNode.id,
+                startX: startNode.x,
+                startY: startNode.y,
+                endX: targetNode.x,
+                endY: targetNode.y,
+            };
+        }).filter(Boolean) as {
+            id: number;
+            startX: number;
+            startY: number;
+            endX: number;
+            endY: number;
+        }[];
+
+        // 无需要动画的节点，直接完成
+        if (nodeAnimations.length === 0) {
+            onComplete();
+            return;
+        }
+
+        // 动画帧循环
+        const animate = (currentTime: number) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / animationDuration, 1);
+            // ease-out缓动函数：越接近终点，速度越慢，手感更自然
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+            // 计算当前帧的节点坐标
+            const updatedNodes = startNodes.map(node => {
+                const anim = nodeAnimations.find(a => a.id === node.id);
+                if (!anim) return node;
+                const currentX = anim.startX + (anim.endX - anim.startX) * easeProgress;
+                const currentY = anim.startY + (anim.endY - anim.startY) * easeProgress;
+                return { ...node, x: currentX, y: currentY };
+            });
+
+            onUpdate(updatedNodes);
+
+            if (progress < 1) {
+                animationFrameRef.current = requestAnimationFrame(animate);
+            } else {
+                animationFrameRef.current = null;
+                onComplete();
+            }
+        };
+
+        animationFrameRef.current = requestAnimationFrame(animate);
+    };
 
     useEffect(() => {
         const handleResize = () => setTick(t => t + 1);
@@ -491,11 +566,11 @@ export default function App() {
                 const el = document.getElementById(`node-${n.id}`);
                 const w = el ? el.offsetWidth : 260;
                 const h = el ? el.offsetHeight : 120;
-
-                minX = Math.min(minX, n.x);
-                minY = Math.min(minY, n.y);
-                maxX = Math.max(maxX, n.x + w);
-                maxY = Math.max(maxY, n.y + h);
+                // 适配中心坐标，计算节点实际边界
+                minX = Math.min(minX, n.x - w/2);
+                minY = Math.min(minY, n.y - h/2);
+                maxX = Math.max(maxX, n.x + w/2);
+                maxY = Math.max(maxY, n.y + h/2);
             });
             state.comments.forEach((c) => {
                 minX = Math.min(minX, c.x);
@@ -523,7 +598,6 @@ export default function App() {
         const worldTop = -state.view.y / state.view.zoom;
         const worldW = windowSize.w / state.view.zoom;
         const worldH = windowSize.h / state.view.zoom;
-
         const viewLeft = worldLeft * scale + offsetX;
         const viewTop = worldTop * scale + offsetY;
         const viewW = worldW * scale;
@@ -564,14 +638,12 @@ export default function App() {
     // Draw edges whenever nodes/edges change.
     useLayoutEffect(() => {
         if (viewMode !== "graph") return;
-
         const canvas = lineCanvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-
         // 直接获取画布当前的布局尺寸
         const rect = canvas.getBoundingClientRect();
         const logicalWidth = rect.width || window.innerWidth;
@@ -580,7 +652,6 @@ export default function App() {
         // 使用 Math.round 确保像素对齐，且只更新属性，不碰 style
         const targetBufferWidth = Math.round(logicalWidth * dpr);
         const targetBufferHeight = Math.round(logicalHeight * dpr);
-
         if (canvas.width !== targetBufferWidth || canvas.height !== targetBufferHeight) {
             canvas.width = targetBufferWidth;
             canvas.height = targetBufferHeight;
@@ -592,9 +663,7 @@ export default function App() {
 
         // 清除画布（注意由于已经 scale 了，这里传逻辑尺寸即可）
         ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-
         const { x: vX, y: vY, zoom } = state.view;
-
         const worldToScreen = (wx: number, wy: number) => ({
             x: wx * zoom + vX,
             y: wy * zoom + vY
@@ -625,7 +694,6 @@ export default function App() {
             // 传入 bounds 计算锚点
             const startW = getNodeAnchor(fromBounds, toBounds, true);
             const endW = getNodeAnchor(fromBounds, toBounds, false);
-
             const start = worldToScreen(startW.x, startW.y);
             const end = worldToScreen(endW.x, endW.y);
 
@@ -640,7 +708,6 @@ export default function App() {
             // 基于法线方向 (nx, ny) 延伸控制点，告别之前的 horizontal 乱跳问题
             const cp1X = start.x + startW.nx * curveStrength;
             const cp1Y = start.y + startW.ny * curveStrength;
-
             const cp2X = end.x + endW.nx * curveStrength;
             const cp2Y = end.y + endW.ny * curveStrength;
 
@@ -722,12 +789,16 @@ export default function App() {
             ctx.arcTo(x, y, x + w, y, rr);
             ctx.closePath();
         };
-
+        // ========== 修正后的drawNode函数 start ==========
         const drawNode = (n: Node, isConnecting: boolean) => {
             const bounds = getNodeBounds(n); // 获取真实尺寸
-            const { x, y } = worldToMini(n.x, n.y);
+            // 节点x,y为中心坐标，绘制时偏移到左上角
+            const { x: centerX, y: centerY } = worldToMini(n.x, n.y);
             const w = bounds.w * scale;
             const h = bounds.h * scale;
+            const x = centerX - w / 2;
+            const y = centerY - h / 2;
+
             const r = (n.type === "start" ? 100 : 10) * scale;
             const headerH = 30 * scale;
             const footerH = 26 * scale;
@@ -776,6 +847,7 @@ export default function App() {
             }
         };
 
+        // ========== 修正后的drawNode函数 end ==========
         const drawComment = (c: CommentBox) => {
             const { x, y } = worldToMini(c.x, c.y);
             const w = c.w * scale;
@@ -813,7 +885,6 @@ export default function App() {
 
             const fromBounds = getNodeBounds(fromNode);
             const toBounds = getNodeBounds(toNode);
-
             const startW = getNodeAnchor(fromBounds, toBounds, true);
             const endW = getNodeAnchor(fromBounds, toBounds, false);
 
@@ -943,7 +1014,7 @@ export default function App() {
                 }));
             }
         };
-
+        // ========== 修正后的onMouseMove拖拽逻辑 start ==========
         const onMouseMove = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
             
@@ -977,44 +1048,51 @@ export default function App() {
                     const dy = (e.clientY - drag.oy) / prev.view.zoom;
                     const enableSnap = prev.enableSnapToGrid;
                     if (drag.kind === "node") {
-                        // 单个节点
+                        // 单个节点：拖拽时平滑吸附网格，避免生硬跳格
                         const node = prev.nodes.find(n => n.id === drag.id);
                         if (node) {
-                            // 基于拖拽起始位置计算总偏移量，而非增量偏移
                             const totalDx = (e.clientX - drag.ox) / prev.view.zoom;
                             const totalDy = (e.clientY - drag.oy) / prev.view.zoom;
-                            const targetX = (drag.startX || drag.ox) + totalDx;
-                            const targetY = (drag.startY || drag.oy) + totalDy;
-                            const snappedX = snapToGrid(targetX, enableSnap);
-                            const snappedY = snapToGrid(targetY, enableSnap);
+                            const rawX = (drag.startX || drag.ox) + totalDx;
+                            const rawY = (drag.startY || drag.oy) + totalDy;
+                            // 计算吸附目标坐标
+                            const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                            const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                            // 缓动系数：0.7-0.9手感最佳，越接近1越跟手，越接近0越顺滑
+                            const easeFactor = 0.75;
+                            // 线性插值实现平滑过渡，替代硬跳转
+                            const smoothX = node.x + (targetX - node.x) * easeFactor;
+                            const smoothY = node.y + (targetY - node.y) * easeFactor;
                             next = {
                                 ...next,
                                 nodes: next.nodes.map((n) =>
-                                    n.id === drag.id ? { ...n, x: snappedX, y: snappedY } : n
+                                    n.id === drag.id ? { ...n, x: smoothX, y: smoothY } : n
                                 ),
-                                // 关键修复：不再更新拖拽起始坐标ox/oy，与多选逻辑保持一致
                                 dragTarget: drag,
                             };
                         }
                     } else if (drag.kind === "nodeGroup") {
-                        // 多选节点：不更新 ox/oy，保持初始锚点
+                        // 多选节点：拖拽时平滑吸附网格
                         next = {
                             ...next,
                             nodes: next.nodes.map((n) => {
                                 const start = drag.positions[n.id];
                                 if (start) {
-                                    const targetX = start.x + dx;
-                                    const targetY = start.y + dy;
-                                    const snappedX = snapToGrid(targetX, enableSnap);
-                                    const snappedY = snapToGrid(targetY, enableSnap);
-                                    return { ...n, x: snappedX, y: snappedY };
+                                    const rawX = start.x + dx;
+                                    const rawY = start.y + dy;
+                                    const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                                    const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                                    const easeFactor = 0.75;
+                                    const smoothX = n.x + (targetX - n.x) * easeFactor;
+                                    const smoothY = n.y + (targetY - n.y) * easeFactor;
+                                    return { ...n, x: smoothX, y: smoothY };
                                 }
                                 return n;
                             }),
                             dragTarget: drag,
                         };
                     } else {
-                        // 注释框
+                        // 注释框拖拽逻辑保持不变
                         const comment = prev.comments.find(c => c.id === drag.id);
                         if (comment) {
                             const targetX = comment.x + dx;
@@ -1051,7 +1129,8 @@ export default function App() {
                 return next;
             });
         };
-
+        // ========== 修正后的onMouseMove拖拽逻辑 end ==========
+        // ========== 修正后的onMouseUp事件 start ==========
         const onMouseUp = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
             
@@ -1080,15 +1159,66 @@ export default function App() {
                 selectionDragRef.current = null;
                 setSelectionBox(null);
             }
-            setState((prev) => ({
-                ...prev,
-                isPanning: false,
-                lastMouse: undefined,
-                dragTarget: null,
-                resizing: null,
-            }));
-        };
 
+            // 拖拽结束，执行最终缓动吸附动画，保证节点精准对齐网格
+            const currentState = stateRef.current;
+            const dragTarget = currentState.dragTarget;
+            const enableSnap = currentState.enableSnapToGrid;
+            if (dragTarget && (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") && enableSnap) {
+                // 计算最终精准吸附的目标坐标
+                let targetNodes = [...currentState.nodes];
+                if (dragTarget.kind === "node") {
+                    targetNodes = targetNodes.map(node => {
+                        if (node.id === dragTarget.id) {
+                            return {
+                                ...node,
+                                x: snapToGrid(node.x, enableSnap),
+                                y: snapToGrid(node.y, enableSnap),
+                            };
+                        }
+                        return node;
+                    });
+                } else if (dragTarget.kind === "nodeGroup") {
+                    targetNodes = targetNodes.map(node => {
+                        if (dragTarget.ids.includes(node.id)) {
+                            return {
+                                ...node,
+                                x: snapToGrid(node.x, enableSnap),
+                                y: snapToGrid(node.y, enableSnap),
+                            };
+                        }
+                        return node;
+                    });
+                }
+                // 执行缓动动画，最终对齐网格
+                animateNodeToSnapPosition(
+                    currentState.nodes,
+                    targetNodes,
+                    enableSnap,
+                    (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
+                    () => {
+                        // 动画结束后重置拖拽状态
+                        setState(prev => ({
+                            ...prev,
+                            isPanning: false,
+                            lastMouse: undefined,
+                            dragTarget: null,
+                            resizing: null,
+                        }));
+                    }
+                );
+            } else {
+                // 未开启吸附/无拖拽，直接重置状态
+                setState((prev) => ({
+                    ...prev,
+                    isPanning: false,
+                    lastMouse: undefined,
+                    dragTarget: null,
+                    resizing: null,
+                }));
+            }
+        };
+        // ========== 修正后的onMouseUp事件 end ==========
         const onWheel = (e: WheelEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
 
@@ -1212,48 +1342,169 @@ export default function App() {
             }
 
             // 单指视口平移
-            if (touches.length === 1 && stateRef.current.isPanning) {
+            if (touches.length === 1) {
                 e.preventDefault();
                 const touch = touches[0];
-                setState(prev => {
-                    if (!prev.lastMouse) return prev;
-                    return {
-                        ...prev,
-                        view: {
-                            ...prev.view,
-                            x: prev.view.x + (touch.clientX - prev.lastMouse.x),
-                            y: prev.view.y + (touch.clientY - prev.lastMouse.y),
-                        },
-                        lastMouse: { x: touch.clientX, y: touch.clientY }
-                    };
-                });
+                const currentState = stateRef.current;
+                
+                // 处理节点触摸拖拽+实时吸附
+                if (currentState.dragTarget) {
+                    const drag = currentState.dragTarget;
+                    const zoom = currentState.view.zoom;
+                    const enableSnap = currentState.enableSnapToGrid;
+                    const dx = (touch.clientX - drag.ox) / zoom;
+                    const dy = (touch.clientY - drag.oy) / zoom;
+
+                    setState(prev => {
+                        let next = prev;
+                        if (drag.kind === "node") {
+                            // 单个节点触摸拖拽，平滑吸附网格
+                            const node = prev.nodes.find(n => n.id === drag.id);
+                            if (node) {
+                                const totalDx = (touch.clientX - drag.ox) / prev.view.zoom;
+                                const totalDy = (touch.clientY - drag.oy) / prev.view.zoom;
+                                const rawX = (drag.startX || drag.ox) + totalDx;
+                                const rawY = (drag.startY || drag.oy) + totalDy;
+                                const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                                const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                                // 触摸端缓动系数调小，手感更顺滑
+                                const easeFactor = 0.7;
+                                const smoothX = node.x + (targetX - node.x) * easeFactor;
+                                const smoothY = node.y + (targetY - node.y) * easeFactor;
+                                next = {
+                                    ...next,
+                                    nodes: next.nodes.map((n) =>
+                                        n.id === drag.id ? { ...n, x: smoothX, y: smoothY } : n
+                                    ),
+                                    dragTarget: drag,
+                                };
+                            }
+                        } else if (drag.kind === "nodeGroup") {
+                            // 多选节点触摸拖拽，平滑吸附网格
+                            next = {
+                                ...next,
+                                nodes: next.nodes.map((n) => {
+                                    const start = drag.positions[n.id];
+                                    if (start) {
+                                        const rawX = start.x + dx;
+                                        const rawY = start.y + dy;
+                                        const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                                        const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                                        const easeFactor = 0.7;
+                                        const smoothX = n.x + (targetX - n.x) * easeFactor;
+                                        const smoothY = n.y + (targetY - n.y) * easeFactor;
+                                        return { ...n, x: smoothX, y: smoothY };
+                                    }
+                                    return n;
+                                }),
+                                dragTarget: drag,
+                            };
+                        } else if (drag.kind === "comment") {
+                            // 注释框触摸拖拽
+                            const comment = prev.comments.find(c => c.id === drag.id);
+                            if (comment) {
+                                const targetX = comment.x + dx;
+                                const targetY = comment.y + dy;
+                                const snappedX = snapToGrid(targetX, enableSnap);
+                                const snappedY = snapToGrid(targetY, enableSnap);
+                                next = {
+                                    ...next,
+                                    comments: next.comments.map((c) =>
+                                        c.id === drag.id ? { ...c, x: snappedX, y: snappedY } : c
+                                    ),
+                                    dragTarget: { ...drag, ox: touch.clientX, oy: touch.clientY },
+                                };
+                            }
+                        }
+                        return next;
+                    });
+                } 
+                // 处理视口平移
+                else if (stateRef.current.isPanning) {
+                    setState(prev => {
+                        if (!prev.lastMouse) return prev;
+                        return {
+                            ...prev,
+                            view: {
+                                ...prev.view,
+                                x: prev.view.x + (touch.clientX - prev.lastMouse.x),
+                                y: prev.view.y + (touch.clientY - prev.lastMouse.y),
+                            },
+                            lastMouse: { x: touch.clientX, y: touch.clientY }
+                        };
+                    });
+                }
             }
         };
-
-        // 触摸结束/取消
+        // ========== 修正后的onTouchEnd事件 start ==========
         const onTouchEnd = (e: TouchEvent) => {
             const touchState = touchStateRef.current;
+
+            // 触摸拖拽结束，执行最终缓动吸附动画
+            const currentState = stateRef.current;
+            const dragTarget = currentState.dragTarget;
+            const enableSnap = currentState.enableSnapToGrid;
+            if (dragTarget && (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") && enableSnap) {
+                let targetNodes = [...currentState.nodes];
+                if (dragTarget.kind === "node") {
+                    targetNodes = targetNodes.map(node => {
+                        if (node.id === dragTarget.id) {
+                            return {
+                                ...node,
+                                x: snapToGrid(node.x, enableSnap),
+                                y: snapToGrid(node.y, enableSnap),
+                            };
+                        }
+                        return node;
+                    });
+                } else if (dragTarget.kind === "nodeGroup") {
+                    targetNodes = targetNodes.map(node => {
+                        if (dragTarget.ids.includes(node.id)) {
+                            return {
+                                ...node,
+                                x: snapToGrid(node.x, enableSnap),
+                                y: snapToGrid(node.y, enableSnap),
+                            };
+                        }
+                        return node;
+                    });
+                }
+                // 执行缓动动画
+                animateNodeToSnapPosition(
+                    currentState.nodes,
+                    targetNodes,
+                    enableSnap,
+                    (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
+                    () => {
+                        setState(prev => ({
+                            ...prev,
+                            isPanning: false,
+                            lastMouse: undefined,
+                            dragTarget: null,
+                            resizing: null
+                        }));
+                    }
+                );
+            } else {
+                setState(prev => ({
+                    ...prev,
+                    isPanning: false,
+                    lastMouse: undefined,
+                    dragTarget: null,
+                    resizing: null
+                }));
+            }
             
             // 重置触摸状态
             touchState.isTouching = false;
             touchState.isPinching = false;
             touchState.initialTouches = [];
-
-            // 重置编辑器状态
-            setState(prev => ({
-                ...prev,
-                isPanning: false,
-                lastMouse: undefined,
-                dragTarget: null,
-                resizing: null
-            }));
-
             // 延迟重置触摸标记，避免后续触发的鼠标事件重复执行
             setTimeout(() => {
                 touchState.isTouchHandled = false;
             }, 100);
         };
-
+        // ========== 修正后的onTouchEnd事件 end ==========
         const onTouchCancel = () => {
             onTouchEnd(new TouchEvent('touchcancel'));
         };
@@ -1731,12 +1982,13 @@ export default function App() {
                         setSelectedNodeIds([id]);
                         const node = stateRef.current.nodes.find((n) => n.id === id);
                         if (node) {
+                            // ========== 修正后的节点聚焦视口计算 ==========
                             setState((prev) => ({
                                 ...prev,
                                 view: {
                                     ...prev.view,
-                                    x: window.innerWidth / 2 - (node.x + 130) * prev.view.zoom,
-                                    y: window.innerHeight / 2 - (node.y + 60) * prev.view.zoom,
+                                    x: window.innerWidth / 2 - node.x * prev.view.zoom,
+                                    y: window.innerHeight / 2 - node.y * prev.view.zoom,
                                 },
                             }));
                         }
