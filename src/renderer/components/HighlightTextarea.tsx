@@ -116,7 +116,6 @@ export default function HighlightTextarea({
         width: "100%",
         height: "fit-content",
         boxSizing: "border-box",
-        overflow: "hidden",
     };
 
     const backgroundStyle: React.CSSProperties = {
@@ -129,7 +128,6 @@ export default function HighlightTextarea({
         zIndex: 1,
         color: "transparent",
         transform: "translate(0px, 0px)",
-        overflow: "hidden",
     };
 
     const textareaStyle: React.CSSProperties = {

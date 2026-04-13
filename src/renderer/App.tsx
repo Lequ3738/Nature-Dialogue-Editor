@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Character, CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, ProjectData, Resizing } from "./editorTypes";
 import { characterNone, createInitialState, defaultProfile } from "./editorTypes";
-import { addObject, hasEdge, makeGml, parseGmlEditorData, startConnect } from "./editorLogic";
+import { addObject, GRID_SIZE, hasEdge, makeGml, parseGmlEditorData, snapToGrid, startConnect } from "./editorLogic";
 import CodeEditor, { type CodeStyleProfile } from "./CodeEditor";
 import { AboutScreen } from "./config/About";
 import { CodeConfigScreen } from "./config/CodeConfig";
@@ -14,6 +14,8 @@ import { MiniMap, MiniMapMeta, MiniMapResize, MiniMapSize, MiniMapViewStyle } fr
 import { TopBar } from "./components/TopBar";
 import TextViewPanel from "./components/TextViewPanel";
 import { DraggableNode } from "./components/Node";
+import { CommentNode } from "./components/Comment";
+import { reorderEdgesByDefaultBranch, SortableEdgeReorderModal } from "./components/ReorderList";
 
 /**
  * 该文件是渲染进程主 UI：工具栏、工作区视口、节点/注释框渲染、连线绘制、
@@ -64,7 +66,7 @@ function isFilePickerCancelled(err: unknown): boolean {
     return false;
 }
 
-function hexToRgba(hex: string, alpha: number): string {
+export function hexToRgba(hex: string, alpha: number): string {
     const h = (hex || "").trim().replace("#", "");
     if (h.length === 3) {
         const r = parseInt(h[0] + h[0], 16);
@@ -306,6 +308,19 @@ export default function App() {
 
     const [settingsTab, setSettingsTab] = useState<ConfigTabs>("info");
     const [tick, setTick] = useState(0);  // 窗口缩放监听
+
+    const [sortingEdgeNodeId, setSortingEdgeNodeId] = useState<number | null>(null);
+    const [sortDragState, setSortDragState] = useState<{
+        draggingIndex: number | null;
+        overIndex: number | null;
+        dragY: number;
+        dragHeight: number;
+    }>({
+        draggingIndex: null,
+        overIndex: null,
+        dragY: 0,
+        dragHeight: 0,
+    });
 
     useEffect(() => {
         const handleResize = () => setTick(t => t + 1);
@@ -676,7 +691,7 @@ export default function App() {
         ctx.fillRect(0, 0, W, H);
 
         // Grid (based on main grid spacing)
-        const worldGrid = 40;
+        const worldGrid = GRID_SIZE;
         const miniGrid = worldGrid * scale;
         const gridStep = Math.max(4, Math.min(14, miniGrid));
         const dot = theme === "light" ? "rgba(148,163,184,0.55)" : "rgba(148,163,184,0.35)";
@@ -882,8 +897,13 @@ export default function App() {
 
         const isInteractiveTarget = (target: EventTarget | null) => {
             if (!(target instanceof HTMLElement)) return false;
+            // 仅注释框的拖拽把手、缩放器视为交互目标，文本区域放行文本选中
+            const closestComment = target.closest(".comment-box");
+            if (closestComment) {
+                return !!target.closest(".comment-handle, .comment-resizer");
+            }
             return !!target.closest(
-                ".node, .comment-box, .port, .comment-handle, .comment-resizer, .file-menu, #toolbar"
+                ".node, .port, .file-menu, #toolbar"
             );
         };
 
@@ -955,34 +975,60 @@ export default function App() {
                     const drag = prev.dragTarget;
                     const dx = (e.clientX - drag.ox) / prev.view.zoom;
                     const dy = (e.clientY - drag.oy) / prev.view.zoom;
+                    const enableSnap = prev.enableSnapToGrid;
                     if (drag.kind === "node") {
                         // 单个节点
-                        next = {
-                            ...next,
-                            nodes: next.nodes.map((n) =>
-                                n.id === drag.id ? { ...n, x: n.x + dx, y: n.y + dy } : n
-                            ),
-                            dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
-                        };
+                        const node = prev.nodes.find(n => n.id === drag.id);
+                        if (node) {
+                            // 基于拖拽起始位置计算总偏移量，而非增量偏移
+                            const totalDx = (e.clientX - drag.ox) / prev.view.zoom;
+                            const totalDy = (e.clientY - drag.oy) / prev.view.zoom;
+                            const targetX = (drag.startX || drag.ox) + totalDx;
+                            const targetY = (drag.startY || drag.oy) + totalDy;
+                            const snappedX = snapToGrid(targetX, enableSnap);
+                            const snappedY = snapToGrid(targetY, enableSnap);
+                            next = {
+                                ...next,
+                                nodes: next.nodes.map((n) =>
+                                    n.id === drag.id ? { ...n, x: snappedX, y: snappedY } : n
+                                ),
+                                // 关键修复：不再更新拖拽起始坐标ox/oy，与多选逻辑保持一致
+                                dragTarget: drag,
+                            };
+                        }
                     } else if (drag.kind === "nodeGroup") {
                         // 多选节点：不更新 ox/oy，保持初始锚点
                         next = {
                             ...next,
                             nodes: next.nodes.map((n) => {
                                 const start = drag.positions[n.id];
-                                return start ? { ...n, x: start.x + dx, y: start.y + dy } : n;
+                                if (start) {
+                                    const targetX = start.x + dx;
+                                    const targetY = start.y + dy;
+                                    const snappedX = snapToGrid(targetX, enableSnap);
+                                    const snappedY = snapToGrid(targetY, enableSnap);
+                                    return { ...n, x: snappedX, y: snappedY };
+                                }
+                                return n;
                             }),
                             dragTarget: drag,
                         };
                     } else {
                         // 注释框
-                        next = {
-                            ...next,
-                            comments: next.comments.map((c) =>
-                                c.id === drag.id ? { ...c, x: c.x + dx, y: c.y + dy } : c
-                            ),
-                            dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
-                        };
+                        const comment = prev.comments.find(c => c.id === drag.id);
+                        if (comment) {
+                            const targetX = comment.x + dx;
+                            const targetY = comment.y + dy;
+                            const snappedX = snapToGrid(targetX, enableSnap);
+                            const snappedY = snapToGrid(targetY, enableSnap);
+                            next = {
+                                ...next,
+                                comments: next.comments.map((c) =>
+                                    c.id === drag.id ? { ...c, x: snappedX, y: snappedY } : c
+                                ),
+                                dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
+                            };
+                        }
                     }
                 }
                 if (prev.resizing) {
@@ -1236,6 +1282,7 @@ export default function App() {
             const nextSelected = isAlreadySelected ? selectedNodeIds : [target.id];
             setSelectedNodeIds(nextSelected);
             if (nextSelected.length > 1) {
+                // 多选逻辑
                 const positions: Record<number, { x: number; y: number }> = {};
                 stateRef.current.nodes.forEach((node) => {
                     if (nextSelected.includes(node.id)) {
@@ -1253,6 +1300,22 @@ export default function App() {
                     },
                 }));
                 return;
+            } else {
+                // 单个节点：记录拖拽前的初始位置
+                const node = stateRef.current.nodes.find(n => n.id === target.id);
+                if (node) {
+                    setState((prev) => ({
+                        ...prev,
+                        dragTarget: {
+                            ...target,
+                            ox: e.clientX,
+                            oy: e.clientY,
+                            startX: node.x,
+                            startY: node.y,
+                        },
+                    }));
+                    return;
+                }
             }
         }
         setState((prev) => ({ ...prev, dragTarget: target }));
@@ -1529,6 +1592,43 @@ export default function App() {
         [state.view.x, state.view.y, state.view.zoom]
     );
 
+    // 获取当前排序节点的连出default连线
+    const sortingEdgeList = useMemo(() => {
+        if (sortingEdgeNodeId === null) return [];
+        return state.edges.filter(e => e.fromId === sortingEdgeNodeId && e.type === "default");
+    }, [sortingEdgeNodeId, state.edges]);
+
+    // 获取连线对应的目标节点信息
+    const getTargetNode = (toId: number) => {
+        return state.nodes.find(n => n.id === toId);
+    };
+
+    // 拖拽排序：交换两个连线的位置
+    const handleSwapEdge = (dragIndex: number, dropIndex: number) => {
+        if (dragIndex === dropIndex) return;
+        setState(prev => {
+            // 拆分原有edges：当前节点的default连线 + 其他所有连线
+            const currentNodeEdges = prev.edges.filter(e => e.fromId === sortingEdgeNodeId && e.type === "default");
+            const otherEdges = prev.edges.filter(e => !(e.fromId === sortingEdgeNodeId && e.type === "default"));
+            
+            // 交换位置
+            const newEdges = [...currentNodeEdges];
+            const [removed] = newEdges.splice(dragIndex, 1);
+            newEdges.splice(dropIndex, 0, removed);
+            
+            // 合并回edges
+            return {
+                ...prev,
+                edges: [...otherEdges, ...newEdges]
+            };
+        });
+    };
+
+    // 关闭排序弹窗
+    const closeSortModal = () => {
+        setSortingEdgeNodeId(null);
+    };
+
     return (
         <>
             <TopBar
@@ -1566,56 +1666,17 @@ export default function App() {
                 />
                 <div id="content-layer" style={{ ...viewportTransformStyle, zIndex: 1 }}>
                     <div id="objects-container">
-                        {state.comments.map((c) => (
-                            <div
-                                key={c.id}
-                                className="comment-box"
-                                style={{
-                                    left: c.x,
-                                    top: c.y,
-                                    width: c.w,
-                                    height: c.h,
-                                    borderColor: c.color,
-                                    background: hexToRgba(c.color, theme === "light" ? 0.08 : 0.06),
-                                }}
-                            >
-                                <div
-                                    className="comment-handle"
-                                    style={{
-                                        background: c.color,
-                                        borderColor: c.color,
-                                        color: "#fff",
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.stopPropagation();
-                                        openCommentModal(c.id);
-                                    }}
-                                    onMouseDown={(e) =>
-                                        beginDrag(e, {
-                                            kind: "comment",
-                                            id: c.id,
-                                            ox: e.clientX,
-                                            oy: e.clientY,
-                                        })
-                                    }
-                                    onTouchStart={(e) =>
-                                        beginTouchDrag(e, {
-                                            kind: "comment",
-                                            id: c.id,
-                                            ox: e.touches[0].clientX,
-                                            oy: e.touches[0].clientY,
-                                        })
-                                    }
-                                >
-                                    {c.text}
-                                </div>
-                                <div
-                                    className="comment-resizer"
-                                    onMouseDown={(e) => beginResize(e, c.id)}
-                                    onTouchStart={(e) => beginTouchResize(e, c.id)}
-                                />
-                            </div>
-                        ))}
+                        {state.comments.map(c => 
+                            <CommentNode
+                                theme={theme}
+                                c={c}
+                                openCommentModal={openCommentModal}
+                                beginDrag={beginDrag}
+                                beginTouchDrag={beginTouchDrag}
+                                beginResize={beginResize}
+                                beginTouchResize={beginTouchResize}
+                            />
+                        )}
 
                         {state.nodes.map((n) => {
                             const isConnecting = connectingFromId === n.id;
@@ -1634,6 +1695,7 @@ export default function App() {
                                     openModal={openModal}
                                     setState={setState}
                                     setEdgeMenu={setEdgeMenu}
+                                    setSortingEdgeNodeId={setSortingEdgeNodeId}
                                 />
                             );
                         })}
@@ -1745,6 +1807,30 @@ export default function App() {
                                 </button>
                             ))
                     )}
+                    {state.edges.filter(
+                        (ed) => ed.fromId === edgeMenu.fromId && ed.type === "default"
+                    ).length >= 2 && (
+                        <button
+                            style={{
+                                width: "100%",
+                                textAlign: "left",
+                                padding: "8px 10px",
+                                borderRadius: 6,
+                                background: "transparent",
+                                color: "var(--accent)",
+                                boxShadow: "none",
+                                fontWeight: 600,
+                                borderTop: "1px solid var(--panel-border)",
+                                marginTop: 4,
+                            }}
+                            onClick={() => {
+                                setSortingEdgeNodeId(edgeMenu.fromId);
+                                setEdgeMenu(null);
+                            }}
+                        >
+                            对连线排序
+                        </button>
+                    )}
                     {state.edges.some(
                         (ed) => ed.fromId === edgeMenu.fromId && ed.type === "default"
                     ) ? (
@@ -1814,6 +1900,46 @@ export default function App() {
                     saveModal={saveModal}
                 />
             }
+
+            {/* 连线排序弹窗 */}
+            {sortingEdgeNodeId !== null && (
+                <SortableEdgeReorderModal
+                    open={sortingEdgeNodeId !== null}
+                    title={`节点 #${sortingEdgeNodeId} 连线排序`}
+                    subtitle="拖动行上下调整顺序，顺序决定代码生成时的选择枝索引"
+                    items={sortingEdgeList}
+                    onClose={closeSortModal}
+                    onCommit={(nextItems) => {
+                        if (sortingEdgeNodeId === null) return;
+
+                        setState((prev) => ({
+                            ...prev,
+                            edges: reorderEdgesByDefaultBranch(
+                                prev.edges,
+                                sortingEdgeNodeId,
+                                nextItems
+                            ),
+                        }));
+                    }}
+                    getItemKey={(edge, index) =>
+                        `${edge.fromId}-${edge.toId}-${edge.type ?? "default"}-${index}`
+                    }
+                    getItemLabel={(edge) => {
+                        const targetNode = getTargetNode(edge.toId);
+                        return `目标节点 #${targetNode?.id ?? "未知"}`;
+                    }}
+                    getItemSubLabel={(edge) => {
+                        const targetNode = getTargetNode(edge.toId);
+                        return targetNode?.type === "node"
+                            ? `对话：${targetNode.character.name || "无角色"}`
+                            : targetNode?.type === "condition"
+                            ? "条件节点"
+                            : targetNode?.type === "start"
+                            ? "开始节点"
+                            : "结束节点";
+                    }}
+                />
+            )}
 
             {settingsOpen && draftProfile && draftProjectState && (
                 <div id="config-back">

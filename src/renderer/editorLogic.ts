@@ -6,6 +6,13 @@ const NODE_WIDTH = 260;
 const NODE_HEIGHT = 120;
 const NODE_GAP = 40;
 
+export const GRID_SIZE = 40;
+
+export function snapToGrid(value: number, enable: boolean): number {
+  if (!enable) return value;
+  return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
 function isNodeOverlapped(candidateX: number, candidateY: number, nodes: Node[]): boolean {
     return nodes.some((n) => {
         const noOverlap =
@@ -20,21 +27,26 @@ function isNodeOverlapped(candidateX: number, candidateY: number, nodes: Node[])
 function findFreeNodePosition(
     centerX: number,
     centerY: number,
-    nodes: Node[]
+    nodes: Node[],
+    enableSnapToGrid: boolean
 ): { x: number; y: number } {
-    if (!isNodeOverlapped(centerX, centerY, nodes)) {
-        return { x: centerX, y: centerY };
+    const snappedX = snapToGrid(centerX, enableSnapToGrid);
+    const snappedY = snapToGrid(centerY, enableSnapToGrid);
+    if (!isNodeOverlapped(snappedX, snappedY, nodes)) {
+        return { x: snappedX, y: snappedY };
     }
 
-    const step = 60;
+    const step = GRID_SIZE;
     const maxRadius = 1200;
 
     for (let radius = step; radius <= maxRadius; radius += step) {
         const points = Math.max(8, Math.floor((Math.PI * 2 * radius) / step));
         for (let i = 0; i < points; i += 1) {
             const angle = (Math.PI * 2 * i) / points;
-            const x = centerX + Math.cos(angle) * radius;
-            const y = centerY + Math.sin(angle) * radius;
+            let x = centerX + Math.cos(angle) * radius;
+            let y = centerY + Math.sin(angle) * radius;
+            x = snapToGrid(x, enableSnapToGrid);
+            y = snapToGrid(y, enableSnapToGrid);
             if (!isNodeOverlapped(x, y, nodes)) {
                 return { x, y };
             }
@@ -80,10 +92,12 @@ export function addObject(
 
     if (type === "comment") {
         const nextId = state.idCounter;
+        const snappedX = snapToGrid(center.x, state.enableSnapToGrid);
+        const snappedY = snapToGrid(center.y, state.enableSnapToGrid);
         const next: CommentBox = {
             id: "c" + nextId,
-            x: center.x,
-            y: center.y,
+            x: snappedX,
+            y: snappedY,
             w: 400,
             h: 300,
             text: "区域注释",
@@ -93,7 +107,7 @@ export function addObject(
     }
 
     const nextId = state.idCounter;
-    const placed = findFreeNodePosition(center.x, center.y, state.nodes);
+    const placed = findFreeNodePosition(center.x, center.y, state.nodes, state.enableSnapToGrid);
     const next: Node = {
         id: nextId,
         type: type,

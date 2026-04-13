@@ -60,7 +60,7 @@
 
 .port {
     font-size: 10px;
-    padding: 3px 8px;
+    padding: 4px 8px;
     border-radius: 3px;
     background: var(--secondary-button);
     cursor: crosshair;

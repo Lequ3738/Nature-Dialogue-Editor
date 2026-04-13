@@ -136,6 +136,21 @@ export function TopBar({
             />
             <button
                 className="theme-toggle"
+                onClick={() => setState(prev => ({
+                    ...prev,
+                    enableSnapToGrid: !prev.enableSnapToGrid
+                }))}
+                title={state.enableSnapToGrid ? "关闭网格吸附" : "开启网格吸附"}
+                style={{
+                    background: state.enableSnapToGrid 
+                        ? (theme === "dark" ? "#43b581" : "#3baa71")
+                        : undefined,
+                }}
+            >
+                ▦
+            </button>
+            <button
+                className="theme-toggle"
                 onClick={() => setState(
                     prev => ({
                         ...prev,

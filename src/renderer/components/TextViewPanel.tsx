@@ -170,35 +170,54 @@ export default function TextViewPanel({
         setWholeWord(false);
     };
 
+    // ========== 核心修复：搜索栏总高度常量，用于滚动容器的顶部padding ==========
+    const SEARCH_BAR_TOTAL_HEIGHT = 165; // 上下padding + 搜索栏内容最大高度
     return (
         <div
             style={{
                 position: "fixed",
                 inset: "50px 0 0 0",
-                overflow: "auto",
+                display: "flex",
+                flexDirection: "column",
                 background: "var(--bg)",
                 color: "var(--text)",
+                overflow: "hidden", // 修复：根容器禁止溢出，仅内部滚动容器可滚动
             }}
-            className="custom-scroll"
         >
+            {/* ========== 【核心修复】悬浮毛玻璃搜索/替换栏 ========== */}
+            {/* 改为absolute悬浮，脱离文档流，不占据高度，节点可滚动到其后方 */}
             <div
                 style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
                     maxWidth: 1400,
+                    width: "100%",
                     margin: "0 auto",
-                    padding: 18,
-                    display: "grid",
-                    gap: 16,
+                    padding: "18px 18px 0",
+                    boxSizing: "border-box",
+                    zIndex: 10,
                 }}
             >
+                {/* 毛玻璃核心容器 */}
                 <div
                     style={{
-                        background: "color-mix(in srgb, var(--panel) 92%, transparent)",
-                        border: "1px solid var(--panel-border)",
+                        // 核心毛玻璃效果：背景模糊，捕获后方滚动的节点
+                        backdropFilter: "blur(12px)",
+                        WebkitBackdropFilter: "blur(12px)",
+                        // 修复：降低背景不透明度，保证后方节点可见，同时保证文字清晰
+                        background: "color-mix(in srgb, var(--bg) 22%, transparent)",
+                        // 半透明边框，贴合毛玻璃质感
+                        border: "1px solid color-mix(in srgb, var(--panel-border) 35%, transparent)",
                         borderRadius: 16,
-                        boxShadow: "var(--shadow-strong)",
+                        // 柔和阴影，适配毛玻璃的轻盈质感
+                        //boxShadow: "0 8px 32px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04)",
                         padding: 14,
                         display: "grid",
                         gap: 12,
+                        // 硬件加速：避免模糊效果闪烁
+                        transform: "translateZ(0)",
                     }}
                 >
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -238,7 +257,7 @@ export default function TextViewPanel({
                             清除
                         </button>
                     </div>
-                    {/* 新增：区分大小写、全字匹配 复选框 */}
+                    {/* 匹配规则复选框 */}
                     <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, opacity: 0.9 }}>
                             <input
@@ -249,7 +268,6 @@ export default function TextViewPanel({
                             仅搜索已选中的节点
                         </label>
                         <span style={{ fontSize: 13, opacity: 0.5 }}>|</span>
-                        {/* 新增：区分大小写复选框 */}
                         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, opacity: 0.9 }}>
                             <input
                                 type="checkbox"
@@ -258,7 +276,6 @@ export default function TextViewPanel({
                             />
                             区分大小写
                         </label>
-                        {/* 新增：全字匹配复选框 */}
                         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, opacity: 0.9 }}>
                             <input
                                 type="checkbox"
@@ -294,22 +311,59 @@ export default function TextViewPanel({
                         </label>
                     </div>
                 </div>
-                {visibleNodes.length === 0 ? (
-                    <div
-                        style={{
-                            border: "1px dashed var(--panel-border)",
-                            borderRadius: 16,
-                            padding: 24,
-                            opacity: 0.75,
-                            textAlign: "center",
-                            background: "color-mix(in srgb, var(--panel) 85%, transparent)",
-                        }}
-                    >
-                        没有匹配的节点。可以先清空搜索，或者新增一个对话节点。
-                    </div>
-                ) : (
-                    <div style={{ display: "grid", gap: 12 }}>
-                        {visibleNodes.map((node) => {
+                {/* 修复：底部渐变遮罩改为从半透明bg到完全透明，不遮挡节点 */}
+                <div
+                    style={{
+                        position: "absolute",
+                        left: 18,
+                        right: 18,
+                        bottom: -20,
+                        height: 20,
+                        background: "linear-gradient(to bottom, color-mix(in srgb, var(--bg) 60%, transparent), transparent)",
+                        pointerEvents: "none",
+                        zIndex: 9,
+                    }}
+                />
+            </div>
+
+            {/* ========== 【核心修复】滚动容器 ========== */}
+            <div
+                className="custom-scroll"
+                style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    // 修复：顶部padding等于搜索栏总高度，初始内容在搜索栏下方，滚动时可滑到搜索栏后方
+                    padding: `${SEARCH_BAR_TOTAL_HEIGHT}px 18px 18px`,
+                    boxSizing: "border-box",
+                    width: "100%",
+                    maxWidth: 1400,
+                    margin: "0 auto",
+                    // 修复：滚动容器层级低于搜索栏
+                    zIndex: 1,
+                }}
+            >
+                <div
+                    style={{
+                        display: "grid",
+                        gap: 12,
+                    }}
+                >
+                    {visibleNodes.length === 0 ? (
+                        <div
+                            style={{
+                                border: "1px dashed var(--panel-border)",
+                                borderRadius: 16,
+                                padding: 24,
+                                opacity: 0.75,
+                                textAlign: "center",
+                                background: "color-mix(in srgb, var(--panel) 85%, transparent)",
+                            }}
+                        >
+                            没有匹配的节点。可以先清空搜索，或者新增一个对话节点。
+                        </div>
+                    ) : (
+                        visibleNodes.map((node) => {
                             const selected = selectedNodeIds.includes(node.id);
                             const matched = !!searchText && [
                                 node.cn,
@@ -421,7 +475,6 @@ export default function TextViewPanel({
                                                 highlightStyle={highlightStyle}
                                                 caseSensitive={caseSensitive}
                                                 wholeWord={wholeWord}
-                                                rows={Math.max(3, Math.min(8, node.code.split("\n").length + 1))}
                                                 style={{
                                                     width: "100%",
                                                     resize: "vertical",
@@ -435,9 +488,9 @@ export default function TextViewPanel({
                                     </div>
                                 </div>
                             );
-                        })}
-                    </div>
-                )}
+                        })
+                    )}
+                </div>
             </div>
         </div>
     );

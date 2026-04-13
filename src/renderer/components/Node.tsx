@@ -13,6 +13,7 @@ export const DraggableNode = React.memo(({
     openModal,
     setState,
     setEdgeMenu,
+    setSortingEdgeNodeId,
 }: {
     n: Node;
     isSelected: boolean;
@@ -25,9 +26,13 @@ export const DraggableNode = React.memo(({
     setState: React.Dispatch<React.SetStateAction<EditorState>>;
     setEdgeMenu: React.Dispatch<React.SetStateAction<{
         fromId: number; x: number; y: number; } | null>>
+    setSortingEdgeNodeId: (id: number | null) => void;
 }) => {
     const isCond = n.type === "condition";
     const isStart = n.type === "start";
+
+    const defaultEdgeCount = state.edges.filter(e => e.fromId === n.id && e.type === "default").length;
+    const hasMultiEdges = defaultEdgeCount >= 2;
 
     return (
         <div
@@ -42,7 +47,6 @@ export const DraggableNode = React.memo(({
                 boxShadow: isConnecting ? `0 0 20px ${n.color}` : undefined,
             }}
         >
-            {/* 节点内部的header、body、footer代码，和你原来的完全一致，直接复制过来 */}
             <div
                 className={`node-header ${isStart ? "start-node-header" : ""}`}
                 onMouseDown={(e) =>
@@ -148,34 +152,55 @@ export const DraggableNode = React.memo(({
                     </>
                 ) : (
                     <>
-                        <button
-                            className={`port ${hasEdge(state, n.id, "default") ? "connected" : ""}`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setState((prev) => startConnect(prev, n.id, "default"));
-                            }}
-                            onContextMenu={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                if (n.type === "start") {
-                                    setState((prev) => ({
-                                        ...prev,
-                                        edges: prev.edges.filter(
-                                            (ed) => !(ed.fromId === n.id && ed.type === "default")
-                                        ),
-                                    }));
-                                } else {
-                                    setEdgeMenu({
-                                        fromId: n.id,
-                                        x: e.clientX,
-                                        y: e.clientY,
-                                    });
-                                }
-                            }}
-                            title={n.type === "end" ? "" : "右键删除 NEXT 连线"}
-                        >
-                            {n.type === "end" ? "结束" : "NEXT →"}
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
+                            <button
+                                className={`port ${hasEdge(state, n.id, "default") ? "connected" : ""}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setState((prev) => startConnect(prev, n.id, "default"));
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (n.type === "start") {
+                                        setState((prev) => ({
+                                            ...prev,
+                                            edges: prev.edges.filter(
+                                                (ed) => !(ed.fromId === n.id && ed.type === "default")
+                                            ),
+                                        }));
+                                    } else {
+                                        setEdgeMenu({
+                                            fromId: n.id,
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                        });
+                                    }
+                                }}
+                                title={n.type === "end" ? "" : "右键删除 NEXT 连线"}
+                                style={{ flex: 1 }}
+                            >
+                                {n.type === "end" ? "结束" : "NEXT →"}
+                            </button>
+                            {hasMultiEdges && (
+                                <button
+                                    style={{
+                                        padding: "4px 8px",
+                                        fontSize: 10,
+                                        height: "100%",
+                                        margin: 0,
+                                        borderRadius: 3,
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSortingEdgeNodeId(n.id);
+                                    }}
+                                    title="对连线进行排序"
+                                >
+                                    排序
+                                </button>
+                            )}
+                        </div>
                         {isStart && (
                             <span
                                 style={{ cursor: "pointer" }}

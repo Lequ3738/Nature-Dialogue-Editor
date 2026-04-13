@@ -41,7 +41,7 @@ export interface ViewState {
 }
 
 export type DragTarget =
-    | { kind: "node"; id: number; ox: number; oy: number }
+    | { kind: "node"; id: number; ox: number; oy: number, startX?: number, startY?: number }
     | { kind: "nodeGroup"; ids: number[]; positions: Record<number, { x: number; y: number }>; ox: number; oy: number }
     | { kind: "comment"; id: string; ox: number; oy: number };
 
@@ -79,6 +79,7 @@ export interface EditorState extends ProjectData {
     dragTarget: DragTarget | null;
     connecting: Connecting | null;
     resizing: Resizing | null;
+    enableSnapToGrid: boolean;
 }
 
 export function createInitialState(): EditorState {
@@ -93,6 +94,7 @@ export function createInitialState(): EditorState {
         dragTarget: null,
         connecting: null,
         resizing: null,
+        enableSnapToGrid: false,
 
         title: "",
         description: "",
@@ -582,7 +584,7 @@ export const defaultProfile: CodeStyleProfile = {
             ]
         }, {
             id: "g6", name: "人物动作与表情", type: "constant",
-            colorDark: "#ff8080", colorLight: "#800000",
+            colorLight: "#800000", colorDark: "#ff8080",
             keywords: [
               "nm_enter", "nm_enter_from_bottom", "nm_enter_from_left",
               "nm_enter_from_right", "nm_shake", "nm_shake_small", "nm_jump",
