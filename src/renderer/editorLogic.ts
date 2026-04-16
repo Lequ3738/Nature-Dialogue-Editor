@@ -354,13 +354,19 @@ export function makeGml(state: EditorState): string {
         gml += `    _text[lang_en] = "${escapeGmlString(n.en)}";\n`;
 
         if (isChoiceResult) {
-            if (n.code) gml += `    ${compileGML(n.code, n)}\n`;
-            gml += `    //*/\n`;
+            if (n.code)
+            {
+                gml += `    ${compileGML(n.code, n)}\n`;
+                gml += `    //*/\n`;
+            }
             gml += `    return _text[global.language];\n`;
         } else {
             gml += `    displayingText = _text[global.language];\n\n`;
-            if (n.code) gml += `    ${compileGML(n.code, n)}\n`;
-            gml += `    //*/\n`;
+            if (n.code)
+            {
+                gml += `    ${compileGML(n.code, n)}\n`;
+                gml += `    //*/\n`;
+            }
         }
         gml += `');\n\n`;
     });
@@ -408,6 +414,7 @@ export function makeGml(state: EditorState): string {
             gml += `dialog_end(_node[${parent.id}], '\n`;
             if (n.code) {
                 gml += `    ${n.code.replace(/\n/g, "\n    ")}\n`;
+                gml += `    //*/\n`;
             }
             gml += `');\n\n`;
         });

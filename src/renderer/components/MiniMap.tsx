@@ -57,7 +57,26 @@ export function MiniMap({
             <canvas
                 id="minimap-canvas"
                 ref={minimapCanvasRef}
+                style={{ pointerEvents: "auto" }}
                 onMouseDown={(e) => {
+                    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+                    const worldX = (mx - minimapMeta.offsetX) / minimapMeta.scale;
+                    const worldY = (my - minimapMeta.offsetY) / minimapMeta.scale;
+                    setState((prev) => ({
+                        ...prev,
+                        view: {
+                            ...prev.view,
+                            x: -worldX * prev.view.zoom + window.innerWidth / 2,
+                            y: -worldY * prev.view.zoom + window.innerHeight / 2,
+                        },
+                    }));
+                }}
+                onMouseMove={(e) => {
+                    if (e.buttons !== 1) return;
+                    e.preventDefault();
+                    e.stopPropagation();
                     const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
                     const mx = e.clientX - rect.left;
                     const my = e.clientY - rect.top;

@@ -590,8 +590,10 @@ export default function App() {
         const spanX = Math.max(1, maxX - minX);
         const spanY = Math.max(1, maxY - minY);
         const scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
-        const offsetX = pad - minX * scale;
-        const offsetY = pad - minY * scale;
+        const contentWidth = spanX * scale;
+        const contentHeight = spanY * scale;
+        const offsetX = (W - contentWidth) / 2 - minX * scale;
+        const offsetY = (H - contentHeight) / 2 - minY * scale;
 
         // Visible world rect.
         const worldLeft = -state.view.x / state.view.zoom;
@@ -1014,7 +1016,7 @@ export default function App() {
                 }));
             }
         };
-        // ========== 修正后的onMouseMove拖拽逻辑 start ==========
+        
         const onMouseMove = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
             
@@ -1091,20 +1093,27 @@ export default function App() {
                             }),
                             dragTarget: drag,
                         };
-                    } else {
-                        // 注释框拖拽逻辑保持不变
+                    } else if (drag.kind === "comment") {
+                        // 注释框：拖拽时平滑吸附网格，和节点逻辑完全对齐
                         const comment = prev.comments.find(c => c.id === drag.id);
                         if (comment) {
-                            const targetX = comment.x + dx;
-                            const targetY = comment.y + dy;
-                            const snappedX = snapToGrid(targetX, enableSnap);
-                            const snappedY = snapToGrid(targetY, enableSnap);
+                            const totalDx = (e.clientX - drag.ox) / prev.view.zoom;
+                            const totalDy = (e.clientY - drag.oy) / prev.view.zoom;
+                            const rawX = (drag.startX || drag.ox) + totalDx;
+                            const rawY = (drag.startY || drag.oy) + totalDy;
+                            // 计算吸附目标坐标
+                            const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                            const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                            // 和节点一致的缓动系数，平滑过渡
+                            const easeFactor = 0.75;
+                            const smoothX = comment.x + (targetX - comment.x) * easeFactor;
+                            const smoothY = comment.y + (targetY - comment.y) * easeFactor;
                             next = {
                                 ...next,
                                 comments: next.comments.map((c) =>
-                                    c.id === drag.id ? { ...c, x: snappedX, y: snappedY } : c
+                                    c.id === drag.id ? { ...c, x: smoothX, y: smoothY } : c
                                 ),
-                                dragTarget: { ...drag, ox: e.clientX, oy: e.clientY },
+                                dragTarget: drag, // 不更新ox/oy，和节点逻辑一致，避免基准偏移
                             };
                         }
                     }
@@ -1129,8 +1138,7 @@ export default function App() {
                 return next;
             });
         };
-        // ========== 修正后的onMouseMove拖拽逻辑 end ==========
-        // ========== 修正后的onMouseUp事件 start ==========
+        
         const onMouseUp = (e: MouseEvent) => {
             if (touchStateRef.current.isTouchHandled) return;
             
@@ -1164,51 +1172,91 @@ export default function App() {
             const currentState = stateRef.current;
             const dragTarget = currentState.dragTarget;
             const enableSnap = currentState.enableSnapToGrid;
-            if (dragTarget && (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") && enableSnap) {
-                // 计算最终精准吸附的目标坐标
-                let targetNodes = [...currentState.nodes];
-                if (dragTarget.kind === "node") {
-                    targetNodes = targetNodes.map(node => {
-                        if (node.id === dragTarget.id) {
-                            return {
-                                ...node,
-                                x: snapToGrid(node.x, enableSnap),
-                                y: snapToGrid(node.y, enableSnap),
-                            };
-                        }
-                        return node;
-                    });
-                } else if (dragTarget.kind === "nodeGroup") {
-                    targetNodes = targetNodes.map(node => {
-                        if (dragTarget.ids.includes(node.id)) {
-                            return {
-                                ...node,
-                                x: snapToGrid(node.x, enableSnap),
-                                y: snapToGrid(node.y, enableSnap),
-                            };
-                        }
-                        return node;
-                    });
-                }
-                // 执行缓动动画，最终对齐网格
-                animateNodeToSnapPosition(
-                    currentState.nodes,
-                    targetNodes,
-                    enableSnap,
-                    (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
-                    () => {
-                        // 动画结束后重置拖拽状态
-                        setState(prev => ({
-                            ...prev,
-                            isPanning: false,
-                            lastMouse: undefined,
-                            dragTarget: null,
-                            resizing: null,
-                        }));
+            if (dragTarget && enableSnap) {
+                // 处理节点/节点组
+                if (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") {
+                    let targetNodes = [...currentState.nodes];
+                    if (dragTarget.kind === "node") {
+                        targetNodes = targetNodes.map(node => {
+                            if (node.id === dragTarget.id) {
+                                return {
+                                    ...node,
+                                    x: snapToGrid(node.x, enableSnap),
+                                    y: snapToGrid(node.y, enableSnap),
+                                };
+                            }
+                            return node;
+                        });
+                    } else if (dragTarget.kind === "nodeGroup") {
+                        targetNodes = targetNodes.map(node => {
+                            if (dragTarget.ids.includes(node.id)) {
+                                return {
+                                    ...node,
+                                    x: snapToGrid(node.x, enableSnap),
+                                    y: snapToGrid(node.y, enableSnap),
+                                };
+                            }
+                            return node;
+                        });
                     }
-                );
+                    animateNodeToSnapPosition(
+                        currentState.nodes,
+                        targetNodes,
+                        enableSnap,
+                        (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
+                        () => {
+                            setState(prev => ({
+                                ...prev,
+                                isPanning: false,
+                                lastMouse: undefined,
+                                dragTarget: null,
+                                resizing: null,
+                            }));
+                        }
+                    );
+                }
+                // 处理注释框
+                else if (dragTarget.kind === "comment") {
+                    const comment = currentState.comments.find(c => c.id === dragTarget.id);
+                    if (comment) {
+                        const startTime = performance.now();
+                        const animationDuration = 150;
+                        const startX = comment.x;
+                        const startY = comment.y;
+                        const endX = snapToGrid(comment.x, enableSnap);
+                        const endY = snapToGrid(comment.y, enableSnap);
+
+                        const animateComment = (currentTime: number) => {
+                            const elapsed = currentTime - startTime;
+                            const progress = Math.min(elapsed / animationDuration, 1);
+                            const easeProgress = 1 - Math.pow(1 - progress, 3);
+                            const currentX = startX + (endX - startX) * easeProgress;
+                            const currentY = startY + (endY - startY) * easeProgress;
+
+                            setState(prev => ({
+                                ...prev,
+                                comments: prev.comments.map(c => 
+                                    c.id === dragTarget.id ? { ...c, x: currentX, y: currentY } : c
+                                )
+                            }));
+
+                            if (progress < 1) {
+                                animationFrameRef.current = requestAnimationFrame(animateComment);
+                            } else {
+                                animationFrameRef.current = null;
+                                setState(prev => ({
+                                    ...prev,
+                                    isPanning: false,
+                                    lastMouse: undefined,
+                                    dragTarget: null,
+                                    resizing: null,
+                                }));
+                            }
+                        };
+                        animationFrameRef.current = requestAnimationFrame(animateComment);
+                    }
+                }
             } else {
-                // 未开启吸附/无拖拽，直接重置状态
                 setState((prev) => ({
                     ...prev,
                     isPanning: false,
@@ -1400,19 +1448,25 @@ export default function App() {
                                 dragTarget: drag,
                             };
                         } else if (drag.kind === "comment") {
-                            // 注释框触摸拖拽
+                            // 注释框触摸拖拽，平滑吸附网格，和节点逻辑对齐
                             const comment = prev.comments.find(c => c.id === drag.id);
                             if (comment) {
-                                const targetX = comment.x + dx;
-                                const targetY = comment.y + dy;
-                                const snappedX = snapToGrid(targetX, enableSnap);
-                                const snappedY = snapToGrid(targetY, enableSnap);
+                                const totalDx = (touch.clientX - drag.ox) / prev.view.zoom;
+                                const totalDy = (touch.clientY - drag.oy) / prev.view.zoom;
+                                const rawX = (drag.startX || drag.ox) + totalDx;
+                                const rawY = (drag.startY || drag.oy) + totalDy;
+                                const targetX = enableSnap ? snapToGrid(rawX, enableSnap) : rawX;
+                                const targetY = enableSnap ? snapToGrid(rawY, enableSnap) : rawY;
+                                // 触摸端和节点一致的缓动系数
+                                const easeFactor = 0.7;
+                                const smoothX = comment.x + (targetX - comment.x) * easeFactor;
+                                const smoothY = comment.y + (targetY - comment.y) * easeFactor;
                                 next = {
                                     ...next,
                                     comments: next.comments.map((c) =>
-                                        c.id === drag.id ? { ...c, x: snappedX, y: snappedY } : c
+                                        c.id === drag.id ? { ...c, x: smoothX, y: smoothY } : c
                                     ),
-                                    dragTarget: { ...drag, ox: touch.clientX, oy: touch.clientY },
+                                    dragTarget: drag, // 不更新ox/oy，避免基准偏移
                                 };
                             }
                         }
@@ -1444,54 +1498,97 @@ export default function App() {
             const currentState = stateRef.current;
             const dragTarget = currentState.dragTarget;
             const enableSnap = currentState.enableSnapToGrid;
-            if (dragTarget && (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") && enableSnap) {
-                let targetNodes = [...currentState.nodes];
-                if (dragTarget.kind === "node") {
-                    targetNodes = targetNodes.map(node => {
-                        if (node.id === dragTarget.id) {
-                            return {
-                                ...node,
-                                x: snapToGrid(node.x, enableSnap),
-                                y: snapToGrid(node.y, enableSnap),
-                            };
-                        }
-                        return node;
-                    });
-                } else if (dragTarget.kind === "nodeGroup") {
-                    targetNodes = targetNodes.map(node => {
-                        if (dragTarget.ids.includes(node.id)) {
-                            return {
-                                ...node,
-                                x: snapToGrid(node.x, enableSnap),
-                                y: snapToGrid(node.y, enableSnap),
-                            };
-                        }
-                        return node;
-                    });
-                }
-                // 执行缓动动画
-                animateNodeToSnapPosition(
-                    currentState.nodes,
-                    targetNodes,
-                    enableSnap,
-                    (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
-                    () => {
-                        setState(prev => ({
-                            ...prev,
-                            isPanning: false,
-                            lastMouse: undefined,
-                            dragTarget: null,
-                            resizing: null
-                        }));
+            if (dragTarget && enableSnap) {
+                // 处理节点/节点组
+                if (dragTarget.kind === "node" || dragTarget.kind === "nodeGroup") {
+                    let targetNodes = [...currentState.nodes];
+                    if (dragTarget.kind === "node") {
+                        targetNodes = targetNodes.map(node => {
+                            if (node.id === dragTarget.id) {
+                                return {
+                                    ...node,
+                                    x: snapToGrid(node.x, enableSnap),
+                                    y: snapToGrid(node.y, enableSnap),
+                                };
+                            }
+                            return node;
+                        });
+                    } else if (dragTarget.kind === "nodeGroup") {
+                        targetNodes = targetNodes.map(node => {
+                            if (dragTarget.ids.includes(node.id)) {
+                                return {
+                                    ...node,
+                                    x: snapToGrid(node.x, enableSnap),
+                                    y: snapToGrid(node.y, enableSnap),
+                                };
+                            }
+                            return node;
+                        });
                     }
-                );
+                    animateNodeToSnapPosition(
+                        currentState.nodes,
+                        targetNodes,
+                        enableSnap,
+                        (updatedNodes) => setState(prev => ({ ...prev, nodes: updatedNodes })),
+                        () => {
+                            setState(prev => ({
+                                ...prev,
+                                isPanning: false,
+                                lastMouse: undefined,
+                                dragTarget: null,
+                                resizing: null,
+                            }));
+                        }
+                    );
+                }
+                // 处理注释框
+                else if (dragTarget.kind === "comment") {
+                    const comment = currentState.comments.find(c => c.id === dragTarget.id);
+                    if (comment) {
+                        const startTime = performance.now();
+                        const animationDuration = 150;
+                        const startX = comment.x;
+                        const startY = comment.y;
+                        const endX = snapToGrid(comment.x, enableSnap);
+                        const endY = snapToGrid(comment.y, enableSnap);
+
+                        const animateComment = (currentTime: number) => {
+                            const elapsed = currentTime - startTime;
+                            const progress = Math.min(elapsed / animationDuration, 1);
+                            const easeProgress = 1 - Math.pow(1 - progress, 3);
+                            const currentX = startX + (endX - startX) * easeProgress;
+                            const currentY = startY + (endY - startY) * easeProgress;
+
+                            setState(prev => ({
+                                ...prev,
+                                comments: prev.comments.map(c => 
+                                    c.id === dragTarget.id ? { ...c, x: currentX, y: currentY } : c
+                                )
+                            }));
+
+                            if (progress < 1) {
+                                animationFrameRef.current = requestAnimationFrame(animateComment);
+                            } else {
+                                animationFrameRef.current = null;
+                                setState(prev => ({
+                                    ...prev,
+                                    isPanning: false,
+                                    lastMouse: undefined,
+                                    dragTarget: null,
+                                    resizing: null,
+                                }));
+                            }
+                        };
+                        animationFrameRef.current = requestAnimationFrame(animateComment);
+                    }
+                }
             } else {
-                setState(prev => ({
+                setState((prev) => ({
                     ...prev,
                     isPanning: false,
                     lastMouse: undefined,
                     dragTarget: null,
-                    resizing: null
+                    resizing: null,
                 }));
             }
             
@@ -1533,7 +1630,6 @@ export default function App() {
             const nextSelected = isAlreadySelected ? selectedNodeIds : [target.id];
             setSelectedNodeIds(nextSelected);
             if (nextSelected.length > 1) {
-                // 多选逻辑
                 const positions: Record<number, { x: number; y: number }> = {};
                 stateRef.current.nodes.forEach((node) => {
                     if (nextSelected.includes(node.id)) {
@@ -1552,7 +1648,6 @@ export default function App() {
                 }));
                 return;
             } else {
-                // 单个节点：记录拖拽前的初始位置
                 const node = stateRef.current.nodes.find(n => n.id === target.id);
                 if (node) {
                     setState((prev) => ({
@@ -1569,6 +1664,22 @@ export default function App() {
                 }
             }
         }
+        if (target.kind === "comment") {
+            const comment = stateRef.current.comments.find(c => c.id === target.id);
+            if (comment) {
+                setState((prev) => ({
+                    ...prev,
+                    dragTarget: {
+                        ...target,
+                        ox: e.clientX,
+                        oy: e.clientY,
+                        startX: comment.x,
+                        startY: comment.y,
+                    },
+                }));
+                return;
+            }
+        }
         setState((prev) => ({ ...prev, dragTarget: target }));
     };
 
@@ -1576,6 +1687,22 @@ export default function App() {
         e.stopPropagation();
         e.preventDefault();
         const touch = e.touches[0];
+        if (target.kind === "comment") {
+            const comment = stateRef.current.comments.find(c => c.id === target.id);
+            if (comment) {
+                setState((prev) => ({
+                    ...prev,
+                    dragTarget: {
+                        ...target,
+                        ox: touch.clientX,
+                        oy: touch.clientY,
+                        startX: comment.x,
+                        startY: comment.y,
+                    },
+                }));
+                return;
+            }
+        }
         setState((prev) => ({ 
             ...prev, 
             dragTarget: { ...target, ox: touch.clientX, oy: touch.clientY } 
@@ -1982,7 +2109,6 @@ export default function App() {
                         setSelectedNodeIds([id]);
                         const node = stateRef.current.nodes.find((n) => n.id === id);
                         if (node) {
-                            // ========== 修正后的节点聚焦视口计算 ==========
                             setState((prev) => ({
                                 ...prev,
                                 view: {
@@ -2178,17 +2304,17 @@ export default function App() {
                     }
                     getItemLabel={(edge) => {
                         const targetNode = getTargetNode(edge.toId);
-                        return `目标节点 #${targetNode?.id ?? "未知"}`;
+                        return `节点 #${targetNode?.id ?? "未知"}`;
                     }}
                     getItemSubLabel={(edge) => {
                         const targetNode = getTargetNode(edge.toId);
                         return targetNode?.type === "node"
-                            ? `对话：${targetNode.character.name || "无角色"}`
+                            ? `对话：${targetNode.cn || "无内容"}`
                             : targetNode?.type === "condition"
-                            ? "条件节点"
+                            ? "条件"
                             : targetNode?.type === "start"
-                            ? "开始节点"
-                            : "结束节点";
+                            ? "开始"
+                            : "结束";
                     }}
                 />
             )}
