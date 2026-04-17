@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Character, CommentBox, ConfigTabs, CustomVariable, DragTarget, Edge, EditorState, Node, ProjectData, Resizing } from "./editorTypes";
 import { characterNone, createInitialState, defaultProfile } from "./editorTypes";
 import { addObject, GRID_SIZE, hasEdge, makeGml, parseGmlEditorData, snapToGrid, startConnect } from "./editorLogic";
@@ -1896,12 +1896,32 @@ export default function App() {
         }
     };
 
-    const handleSave = async (): Promise<boolean> => {
+    const handleSaveAs = useCallback(async (): Promise<boolean> => {
         const ipc = getIpcRenderer();
         if (!ipc) return false;
+        const defaultName = ensureGmlName(currentFileName);
+        const filePath = await ipc.invoke("dialog:save", defaultName);
 
+        if (!filePath) return false;
         const content = makeGml(state);
+        const result = await ipc.invoke("editor:save-file", filePath, content);
 
+        if (result.success) {
+            setCurrentFilePath(filePath);
+            const fileName = await ipc.invoke('editor:get-filename', filePath);
+            setCurrentFileName(fileName);
+            setDirty(false);
+            return true;
+        } else {
+            alert("保存失败（错误代码：A002）");
+            return false;
+        }
+    }, [currentFileName, state]);
+
+    const handleSave = useCallback(async (): Promise<boolean> => {
+        const ipc = getIpcRenderer();
+        if (!ipc) return false;
+        const content = makeGml(state);
         // 如果已有文件路径，尝试静默保存
         if (currentFilePath) {
             const result = await ipc.invoke("editor:save-file", currentFilePath, content);
@@ -1909,35 +1929,35 @@ export default function App() {
                 setDirty(false);
                 return true;
             } else {
-                // 静默保存失败（如 A001 情况），回退到另存为
+                // 静默保存失败，回退到另存为
                 console.warn("Silent save failed, falling back to Save As.");
                 return await handleSaveAs();
             }
         } else {
             return await handleSaveAs();
         }
-    };
+    }, [currentFilePath, handleSaveAs, state]);
 
-    const handleSaveAs = async (): Promise<boolean> => {
-        const ipc = getIpcRenderer();
-        if (!ipc) return false;
-
-        const defaultName = ensureGmlName(currentFileName);
-        const filePath = await ipc.invoke("dialog:save", defaultName);
-
-        if (!filePath) return false;
-
-        const result = await ipc.invoke("editor:save-file", filePath, makeGml(state));
-        if (result.success) {
-            setCurrentFilePath(filePath);
-            setCurrentFileName(await ipc.invoke('editor:get-filename', filePath)); // 更新标题为选择的文件名
-            setDirty(false);
-            return true;
-        } else {
-            alert("保存失败（错误代码：A002）");
-            return false;
-        }
-    };
+    useEffect(() => {
+        const handleSaveShortcut = async (e: KeyboardEvent) => {
+            // 匹配保存快捷键，兼容多系统
+            const isSaveTrigger = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's';
+            if (!isSaveTrigger) return;
+    
+            // 阻止浏览器默认的「保存网页」行为
+            e.preventDefault();
+            e.stopPropagation();
+    
+            // 执行保存逻辑
+            await handleSave();
+        };
+    
+        window.addEventListener('keydown', handleSaveShortcut);
+        // 组件卸载时移除事件监听，避免内存泄漏
+        return () => {
+            window.removeEventListener('keydown', handleSaveShortcut);
+        };
+    }, [handleSave]);
 
     // 修复设置按钮和切换深/浅色模式按钮导致文件修改
     function handleThemeChange(newTheme: "dark" | "light") {

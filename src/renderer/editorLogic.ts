@@ -344,7 +344,10 @@ export function makeGml(state: EditorState): string {
         // 检查是否是选择枝的结果（父节点出度 >= 2）
         const parents = getParentNodes(state, n);
         const isChoiceResult = parents.some(p =>
-            state.edges.filter(e => e.fromId === p.id).length >= 2 && p.type === "node"
+            (p.type === "node" && state.edges.filter(e => e.fromId === p.id).length >= 2) ||
+            (p.type === "condition" && state.edges.filter(
+                e => getParentNodes(state, p).some(a => e.fromId === a.id)
+            ).length >= 2)
         );
 
         gml += `_node[${n.id}] = ds_graph_node_add(_graph, '\n`;
@@ -361,10 +364,10 @@ export function makeGml(state: EditorState): string {
             }
             gml += `    return _text[global.language];\n`;
         } else {
-            gml += `    displayingText = _text[global.language];\n\n`;
+            gml += `    displayingText = _text[global.language];\n`;
             if (n.code)
             {
-                gml += `    ${compileGML(n.code, n)}\n`;
+                gml += `\n    ${compileGML(n.code, n)}\n`;
                 gml += `    //*/\n`;
             }
         }
