@@ -1,63 +1,39 @@
 {
     "name": "dialogue-editor",
     "version": "1.0.0",
-    "main": "dist-electron/index.js",
     "scripts": {
+        "preview": "vite preview",
+        "build": "vite build",
         "dev": "vite",
-        "start": "vite",
-        "build": "vite build && electron-builder"
+        "tauri": "set PATH=C:\\Users\\HUAWEI\\.cargo\\bin;%PATH% && tauri"
     },
     "keywords": [],
     "author": "",
     "license": "ISC",
     "description": "",
     "devDependencies": {
-        "@codemirror/language": "^6.12.3",
-        "@codemirror/state": "^6.6.0",
-        "@codemirror/stream-parser": "^0.19.9",
         "@codemirror/view": "^6.40.0",
-        "@lezer/highlight": "^1.2.3",
-        "@types/node": "^22.10.2",
-        "@types/pako": "^2.0.4",
-        "@types/react": "^19.2.14",
-        "@types/react-dom": "^19.2.3",
-        "@uiw/react-codemirror": "^4.25.9",
         "@vitejs/plugin-react": "^6.0.1",
-        "electron": "28.3.3",
-        "electron-builder": "^26.8.1",
-        "esbuild": "^0.27.4",
-        "typescript": "^5.7.3",
         "vite": "^8.0.3",
-        "vite-plugin-electron": "^0.29.1",
-        "vite-plugin-electron-renderer": "^0.14.6"
-    },
-    "build": {
-        "appId": "com.my.app",
-        "productName": "Dialogue Editor",
-        "directories": {
-            "output": "dist_electron"
-        },
-        "nsis": {
-            "packElevateHelper": false
-        },
-        "files": [
-            "dist",
-            "dist-electron"
-        ],
-        "win": {
-            "target": "portable",
-            "artifactName": "${productName}_${version}.${ext}",
-            "icon": "public/resources/icon.ico"
-        }
+        "@lezer/highlight": "^1.2.3",
+        "@codemirror/state": "^6.6.0",
+        "@uiw/react-codemirror": "^4.25.9",
+        "typescript": "^5.7.3",
+        "@types/pako": "^2.0.4",
+        "esbuild": "^0.27.4",
+        "@codemirror/stream-parser": "^0.19.9",
+        "@tauri-apps/cli": "^2",
+        "@types/node": "^22.10.2",
+        "@codemirror/language": "^6.12.3",
+        "@types/react": "^19.2.14",
+        "@types/react-dom": "^19.2.3"
     },
     "dependencies": {
+        "react-dom": "^19.2.4",
+        "@tauri-apps/plugin-fs": "^2",
+        "@tauri-apps/plugin-dialog": "^2",
         "pako": "^2.1.0",
         "react": "^19.2.4",
-        "react-dom": "^19.2.4"
-    },
-    "overrides": {
-        "@codemirror/state": "$@codemirror/state",
-        "@codemirror/view": "$@codemirror/view",
-        "@codemirror/language": "$@codemirror/language"
+        "@tauri-apps/api": "^2"
     }
 }

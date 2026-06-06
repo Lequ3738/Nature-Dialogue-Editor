@@ -103,16 +103,14 @@ function rectsIntersect(a: { left: number; top: number; right: number; bottom: n
     return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
 }
 
-export function getIpcRenderer(): any | null {
-    try {
-        const req = (window as any).require;
-        if (typeof req !== "function") return null;
-        const electron = req("electron");
-        return electron?.ipcRenderer ?? null;
-    } catch {
-        return null;
-    }
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open, save, confirm } from "@tauri-apps/plugin-dialog";
+
+function isTauri(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
+
 // ========== 修正后的getNodeAnchor函数 start ==========
 function getNodeAnchor(
     from: { x: number; y: number; w: number; h: number },
@@ -171,6 +169,7 @@ export default function App() {
     const [isDirty, setDirty] = useState(false);
     const stateRef = useRef(state);
     const suppressDirtyRef = useRef(false);
+    const closeConfirmedRef = useRef(false);
     const firstStateRef = useRef(true);
     // ========== 新增：动画帧ref，用于控制缓动动画 ==========
     const animationFrameRef = useRef<number | null>(null);
@@ -450,16 +449,45 @@ export default function App() {
         setDirty(true);
     }, [state.nodes, state.edges, state.comments]);
 
-    useEffect(() => {
+        useEffect(() => {
         const titleName = currentFileName || "新文件";
-        document.title = `${titleName}${isDirty ? "*" : ""} - 对话编辑器`;
+        const fullTitle = `${titleName}${isDirty ? "*" : ""} - 对话编辑器`;
+        document.title = fullTitle;
+        // 同时更新原生窗口标题栏（Tauri 环境）
+        if (isTauri()) {
+            getCurrentWindow().setTitle(fullTitle).catch((err) => {
+                console.warn("更新标题栏失败，请检查 Tauri capabilities 是否开启了 set-title 权限:", err);
+            });
+        }
     }, [currentFileName, isDirty]);
 
-    useEffect(() => {
-        const ipc = getIpcRenderer();
-        if (!ipc) return;
-        ipc.send("editor:dirty", { dirty: isDirty, fileName: currentFileName });
-    }, [currentFileName, isDirty]);
+    const isDirtyRef = useRef(isDirty);
+    isDirtyRef.current = isDirty;
+
+    /* useEffect(() => {
+        if (!isTauri()) return;
+
+        let unlisten: (() => void) | undefined;
+
+        getCurrentWindow().onCloseRequested(async (event) => {
+            /* if (!isDirtyRef.current) return;
+
+            const confirmed = await confirm("文件尚未保存，确定要退出吗？", {
+                title: "未保存的更改",
+                kind: "warning",
+            }); 
+
+            /* if (!confirmed) {
+                event.preventDefault();
+            }
+        }).then((fn) => {
+            unlisten = fn;
+        });
+
+        return () => {
+            //unlisten?.();
+        };
+    }, []); */
 
     useEffect(() => {
         // 初始将视口移动到工作区中心
@@ -1865,20 +1893,20 @@ export default function App() {
 
         // 如果当前已修改，先提示保存
         if (isDirty) {
-            const res = confirm("当前文件尚未保存，是否先保存更改？");
+            const res = isTauri()
+                ? await confirm("当前文件尚未保存，是否先保存更改？", { title: "未保存", kind: "warning" })
+                : window.confirm("当前文件尚未保存，是否先保存更改？");
             if (res) {
                 const saved = await handleSave();
                 if (!saved) return; // 用户取消了保存或保存失败，停止打开流程
             }
         }
 
-        const ipc = getIpcRenderer();
-        if (!ipc) return;
-
-        const filePath = await ipc.invoke("dialog:open");
+        if (!isTauri()) return;
+        const filePath = await open({ filters: [{ name: "GML Files", extensions: ["gml"] }], multiple: false });
         if (!filePath) return;
 
-        const content = await ipc.invoke("editor:read-file", filePath);
+        const content = await invoke<string>("read_file", { path: filePath });
         if (content) {
             const parsed = parseGmlEditorData(content);
             if (parsed) {
@@ -1888,7 +1916,7 @@ export default function App() {
                 setSelectedNodeIds([]);
                 setState(parsed);
                 setCurrentFilePath(filePath);
-                setCurrentFileName(await ipc.invoke('editor:get-filename', filePath));
+                setCurrentFileName(await invoke<string>("get_filename", { path: filePath }));
                 setDirty(false);
             } else {
                 alert("无法解析该文件。");
@@ -1897,18 +1925,17 @@ export default function App() {
     };
 
     const handleSaveAs = useCallback(async (): Promise<boolean> => {
-        const ipc = getIpcRenderer();
-        if (!ipc) return false;
+        if (!isTauri()) return false;
         const defaultName = ensureGmlName(currentFileName);
-        const filePath = await ipc.invoke("dialog:save", defaultName);
+        const filePath = await save({ filters: [{ name: "GML Files", extensions: ["gml"] }], defaultPath: defaultName });
 
         if (!filePath) return false;
         const content = makeGml(state);
-        const result = await ipc.invoke("editor:save-file", filePath, content);
+        const result = await invoke<{ success: boolean }>("save_file", { path: filePath, content });
 
         if (result.success) {
             setCurrentFilePath(filePath);
-            const fileName = await ipc.invoke('editor:get-filename', filePath);
+            const fileName = await invoke<string>("get_filename", { path: filePath });
             setCurrentFileName(fileName);
             setDirty(false);
             return true;
@@ -1919,12 +1946,11 @@ export default function App() {
     }, [currentFileName, state]);
 
     const handleSave = useCallback(async (): Promise<boolean> => {
-        const ipc = getIpcRenderer();
-        if (!ipc) return false;
+        if (!isTauri()) return false;
         const content = makeGml(state);
         // 如果已有文件路径，尝试静默保存
         if (currentFilePath) {
-            const result = await ipc.invoke("editor:save-file", currentFilePath, content);
+            const result = await invoke<{ success: boolean }>("save_file", { path: currentFilePath, content });
             if (result.success) {
                 setDirty(false);
                 return true;
@@ -2419,13 +2445,4 @@ export default function App() {
             )}
         </>
     );
-}
-
-declare global {
-    interface Window {
-        electronAPI: {
-            saveFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
-            readFile: (filePath: string) => Promise<string>;
-        };
-    }
 }

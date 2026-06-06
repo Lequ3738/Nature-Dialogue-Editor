@@ -1,0 +1,18 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-set-title",
+    "core:window:allow-close",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-confirm",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file"
+  ]
+}

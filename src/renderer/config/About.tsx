@@ -81,7 +81,7 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                     gap: '32px', // 图标之间的间距
                     flexWrap: 'wrap'
                 }}>
-                    {/* Electron */}
+                    {/* Tauri */}
                     <div style={{
                         display: 'flex', flexDirection: 'column',
                         alignItems: 'center', gap: '8px'
@@ -100,12 +100,12 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                             }`
                         }}>
                             <img 
-                                src={`${import.meta.env.BASE_URL}resources/electron.svg`}
-                                alt="Electron" 
+                                src={`${import.meta.env.BASE_URL}resources/tauri.svg`}
+                                alt="Tauri" 
                                 style={{ width: '32px', height: '32px', objectFit: 'contain' }}
                             />
                         </div>
-                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Electron</span>
+                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Tauri</span>
                     </div>
 
                     {/* React */}

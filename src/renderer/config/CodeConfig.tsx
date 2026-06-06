@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getIpcRenderer } from "../App";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { CodeStyleProfile, KeywordGroup, KeywordType } from "../CodeEditor";
 import { defaultProfile } from "../editorTypes";
 
@@ -41,10 +41,7 @@ export function CodeConfigScreen({
                     />
                     <button
                         onClick={async () => {
-                            const ipc = getIpcRenderer();
-                            if (!ipc) return;
-                            const result = await ipc.invoke("editor:default-profile") as number;
-                            if (result > 0) {
+                            const result = await confirm("将会覆盖现有的代码编辑器配置，是否继续？", { title: "恢复默认配置", kind: "warning" }); if (result) {
                                 setCodeProfile(defaultProfile);
                             }
                         }}
