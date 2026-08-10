@@ -1,4 +1,5 @@
-import { ModalDraft, PRESET_COLORS } from "../App";
+import type { ModalDraft } from "../editorTypes";
+import { PRESET_COLORS } from "../constants";
 import CodeEditor, { CodeStyleProfile } from "../CodeEditor";
 import { characterNone, Node } from "../editorTypes"
 

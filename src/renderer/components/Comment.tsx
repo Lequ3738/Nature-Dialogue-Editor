@@ -1,4 +1,4 @@
-import { hexToRgba } from "../App";
+import { hexToRgba } from "../utils/color";
 import { CommentBox, DragTarget } from "../editorTypes";
 
 export function CommentNode({

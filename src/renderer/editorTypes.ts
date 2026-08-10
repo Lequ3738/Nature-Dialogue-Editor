@@ -6,6 +6,19 @@ export type NodeType = FuncNodeType | "comment";
 
 export type ConfigTabs = "info" | "var" | "character" | "editor" | "about";
 
+export type ViewMode = "graph" | "text";
+export type SelectionBox = { x1: number; y1: number; x2: number; y2: number } | null;
+export type FileHandle = FileSystemFileHandle;
+
+/** 节点编辑弹窗的草稿数据 */
+export interface ModalDraft {
+    cn: string;
+    en: string;
+    code: string;
+    color: string;
+    character: Character;
+}
+
 export interface Node {
     id: number;
     type: FuncNodeType;
