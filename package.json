@@ -5,7 +5,7 @@
         "preview": "vite preview",
         "build": "vite build",
         "dev": "vite",
-        "tauri": "set PATH=C:\\Users\\HUAWEI\\.cargo\\bin;%PATH% && tauri"
+        "tauri": "set PATH=%USERPROFILE%\\.cargo\\bin;%PATH% && set RUSTFLAGS=-C control-flow-guard=off && tauri"
     },
     "keywords": [],
     "author": "",
