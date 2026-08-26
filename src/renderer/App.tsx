@@ -226,6 +226,7 @@ export default function App() {
         selectionDragRef: viewport.selectionDragRef,
         setFileMenuOpen,
         onClearEditing: editing.closeModal,
+        windowSize,
     });
     const sorting = useEdgeSorting(state);
     useEdgeCanvas({ lineCanvasRef, state, windowSize, tick, viewMode });
@@ -268,6 +269,8 @@ export default function App() {
                 handleOpenClick={file.handleOpenClick}
                 handleSave={file.handleSave}
                 handleSaveAs={file.handleSaveAs}
+                handleSaveAndExport={file.handleSaveAndExport}
+                handleExportGml={file.handleExportGml}
                 fileMenuRef={fileMenuRef}
                 isNewEmpty={file.isNewEmpty}
                 fileInputRef={fileInputRef}

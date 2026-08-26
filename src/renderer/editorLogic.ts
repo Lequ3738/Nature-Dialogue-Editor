@@ -1,9 +1,14 @@
-import type { CommentBox, Edge, EdgeType, EditorState, Node, NodeType } from "./editorTypes";
+import type { CommentBox, Edge, EdgeType, EditorState, Node, NodeType, ViewState } from "./editorTypes";
 import { characterNone, createInitialState } from "./editorTypes";
 import pako from 'pako';
 
 const NODE_WIDTH = 260;
 const NODE_HEIGHT = 120;
+
+/** 打开工程时的视野自适应：缩放夹在 [0.25, 1]，四周留白 */
+const FIT_MIN_ZOOM = 0.25;
+const FIT_MAX_ZOOM = 1;
+const FIT_PADDING = 80;
 const NODE_GAP = 40;
 
 export const GRID_SIZE = 40;
@@ -252,36 +257,45 @@ function findEffectiveDialogueParents(state: EditorState, nodeId: number, visite
     return Array.from(new Set(results));
 }
 
-// 获取当前日期时间
-function getCurrentDateTime(): string {
-    const now = new Date();
-
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-
-    return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
-}
-
-function compressToBase64(str: string): string {
-    // 1. 字符串转为 UTF-8 字节数组
-    const encoder = new TextEncoder();
-    const rawData = encoder.encode(str);
-
-    // 2. 使用 pako 进行 gzip 压缩
-    const compressedData = pako.gzip(rawData);
-
-    // 3. Uint8Array 转 Base64 (分块处理防止栈溢出)
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < compressedData.length; i += chunkSize) {
-        const chunk = compressedData.subarray(i, i + chunkSize);
-        binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+/**
+ * 视野自适应：计算能容纳所有节点的视野（位置居中、缩放适配）。
+ * 节点坐标为中心点，尺寸用常量近似（打开时 DOM 尚未渲染，不能量测）。
+ * 空工程回退到与启动时一致的"工作区中心"视野。
+ */
+export function fitViewToNodes(nodes: Node[], viewportWidth: number, viewportHeight: number): ViewState {
+    if (nodes.length === 0) {
+        return {
+            x: viewportWidth / 2 - 5000,
+            y: viewportHeight / 2 - 5000,
+            zoom: 1,
+        };
     }
-    return btoa(binary);
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+        minX = Math.min(minX, n.x - NODE_WIDTH / 2);
+        minY = Math.min(minY, n.y - NODE_HEIGHT / 2);
+        maxX = Math.max(maxX, n.x + NODE_WIDTH / 2);
+        maxY = Math.max(maxY, n.y + NODE_HEIGHT / 2);
+    }
+
+    const boundsW = Math.max(1, maxX - minX);
+    const boundsH = Math.max(1, maxY - minY);
+    const zoom = Math.min(
+        FIT_MAX_ZOOM,
+        Math.max(FIT_MIN_ZOOM, Math.min(
+            (viewportWidth - FIT_PADDING * 2) / boundsW,
+            (viewportHeight - FIT_PADDING * 2) / boundsH
+        ))
+    );
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    return {
+        x: viewportWidth / 2 - centerX * zoom,
+        y: viewportHeight / 2 - centerY * zoom,
+        zoom,
+    };
 }
 
 function decompressFromBase64(base64Str: string): string {
@@ -308,11 +322,15 @@ function compileGML(gml: string, node: Node): string {
 }
 
 export function makeGml(state: EditorState): string {
-    let gml = `// 对话文件：${state.title}\n`;
+    let gml = `// =============================================\n`;
+    gml += `// 本文件由「对话编辑器」自动生成，请勿手动修改！\n`;
+    gml += `// 请修改对应的对话工程文件后重新导出。\n`;
+    gml += `// =============================================\n\n`;
+    gml += `// 对话文件：${state.title}\n`;
     gml += state.author ? `// 作者：${state.author}\n` : "";
     gml += state.version ? `// 版本：${state.version}\n` : "";
     gml += state.description ? `// 描述：${state.description}\n` : "";
-    gml += `// 最后修改时间: ${getCurrentDateTime()}\n\n`;
+    gml += `\n`;
 
     const exp = state.forbiddenExpression;
     gml += `if (${exp || "false"})\n    return self;\n\n`;
@@ -426,14 +444,15 @@ export function makeGml(state: EditorState): string {
     gml += `_list = ds_list_create();\n`;
     gml += `ds_list_add(_list, _graph);\n`;
     gml += `ds_list_add(_list, _start);\n`;
-    gml += `return _list;\n\n`;
-
-    // 写入编辑器元数据
-    const meta = compressToBase64(JSON.stringify(state));
-    gml += `/* EDITOR_DATA:${meta} */`;
+    gml += `return _list;\n`;
     return gml;
 }
 
+/**
+ * 旧版 .gml 工程导入（兼容迁移用）：从 EDITOR_DATA 尾巴恢复编辑器状态。
+ * 新工程一律使用 .dialogue.json（见 projectFile.ts）。
+ * 旧数据中的 view 已废弃不恢复，由调用方用 fitViewToNodes 自适应。
+ */
 export function parseGmlEditorData(text: string): EditorState | null {
     const startMarker = "/* EDITOR_DATA:";
     const endMarker = " */";
@@ -466,8 +485,7 @@ export function parseGmlEditorData(text: string): EditorState | null {
                 }))
                 : base.comments,
             idCounter: typeof parsed.idCounter === "number" ? parsed.idCounter : base.idCounter,
-            view: parsed.view && typeof parsed.view.x === "number" && typeof parsed.view.y === "number"
-                ? parsed.view : base.view,
+            view: { ...base.view },
 
             title: typeof parsed.title === "string" ? parsed.title : base.title,
             description: typeof parsed.description === "string" ? parsed.description : base.description,

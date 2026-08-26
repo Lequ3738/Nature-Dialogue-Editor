@@ -22,3 +22,17 @@ export function ensureGmlName(name: string): string {
     if (!trimmed) return "dialog_system.gml";
     return trimmed.toLowerCase().endsWith(".gml") ? trimmed : `${trimmed}.gml`;
 }
+
+/** 去掉已知的工程/导出扩展名，得到纯基础名 */
+export function stripKnownExtension(name: string): string {
+    return (name || "").trim()
+        .replace(/\.dialogue\.json$/i, "")
+        .replace(/\.json$/i, "")
+        .replace(/\.gml$/i, "");
+}
+
+/** 确保工程文件名以 .dialogue.json 结尾 */
+export function ensureProjectName(name: string): string {
+    const base = stripKnownExtension(name);
+    return `${base || "dialog_system"}.dialogue.json`;
+}

@@ -3,9 +3,9 @@ import { addObject } from "../editorLogic";
 import { EditorState, ProjectData } from "../editorTypes";
 
 export function TopBar({
-    theme, setState, windowSize, fileMenuOpen, setFileMenuOpen, handleOpenClick, 
-    handleSave, handleSaveAs, fileMenuRef, isNewEmpty, fileInputRef, onImport,
-    handleThemeChange, setDraftProfile, codeProfile, defaultProfile, 
+    theme, setState, windowSize, fileMenuOpen, setFileMenuOpen, handleOpenClick,
+    handleSave, handleSaveAs, handleSaveAndExport, handleExportGml, fileMenuRef, isNewEmpty, fileInputRef, onImport,
+    handleThemeChange, setDraftProfile, codeProfile, defaultProfile,
     setDraftProjectState, state, setSettingsOpen, viewMode, setViewMode
 } : {
     theme: 'light' | 'dark',
@@ -14,8 +14,11 @@ export function TopBar({
     fileMenuOpen: boolean,
     setFileMenuOpen: (value: React.SetStateAction<boolean>) => void,
     handleOpenClick: () => Promise<void>,
-    handleSave: () => Promise<boolean>,
-    handleSaveAs: () => Promise<boolean>,
+    /** 保存成功返回写入路径，失败/取消返回 null */
+    handleSave: () => Promise<string | null>,
+    handleSaveAs: () => Promise<string | null>,
+    handleSaveAndExport: () => Promise<boolean>,
+    handleExportGml: () => Promise<boolean>,
     fileMenuRef: React.RefObject<HTMLDivElement | null>,
     isNewEmpty: boolean,
     fileInputRef: React.RefObject<HTMLInputElement | null>,
@@ -112,6 +115,13 @@ export function TopBar({
                     </button>
                     <button
                         disabled={isNewEmpty}
+                        onClick={handleSaveAndExport}
+                        title="保存工程文件，并导出 GML 到上次位置（首次会询问）"
+                    >
+                        🚀 保存并导出
+                    </button>
+                    <button
+                        disabled={isNewEmpty}
                         onClick={handleSave}
                     >
                         💾 保存
@@ -121,6 +131,13 @@ export function TopBar({
                         onClick={handleSaveAs}
                     >
                         💿 另存为
+                    </button>
+                    <button
+                        disabled={isNewEmpty}
+                        onClick={handleExportGml}
+                        title="由工程文件生成引擎使用的 .gml 文件"
+                    >
+                        ⬇ 导出 GML
                     </button>
                 </div>
             </div>

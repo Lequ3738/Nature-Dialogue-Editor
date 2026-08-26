@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save, confirm } from "@tauri-apps/plugin-dialog";
 import type { EditorState, FileHandle, SelectionBox } from "../editorTypes";
-import { makeGml, parseGmlEditorData } from "../editorLogic";
-import { ensureGmlName, isTauri } from "../utils/platform";
+import { fitViewToNodes, makeGml, parseGmlEditorData } from "../editorLogic";
+import { deserializeProject, serializeProject } from "../projectFile";
+import { ensureGmlName, ensureProjectName, isTauri, stripKnownExtension } from "../utils/platform";
 import type { SelectionDragRef } from "./useViewportInteractions";
 
 type UseFileHandlingParams = {
@@ -16,11 +17,26 @@ type UseFileHandlingParams = {
     setFileMenuOpen: Dispatch<SetStateAction<boolean>>;
     /** 导入/打开成功后关闭正在编辑的节点弹窗 */
     onClearEditing: () => void;
+    /** 视野自适应需要视口尺寸 */
+    windowSize: { w: number; h: number };
 };
 
+/** 拆分路径为目录与文件名（兼容反斜杠与正斜杠） */
+function splitPath(p: string): { dir: string; name: string } {
+    const i = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
+    return i >= 0 ? { dir: p.slice(0, i), name: p.slice(i + 1) } : { dir: "", name: p };
+}
+
+function joinPath(dir: string, name: string): string {
+    if (!dir) return name;
+    return dir.endsWith("\\") || dir.endsWith("/") ? dir + name : dir + "\\" + name;
+}
+
 /**
- * 文件子系统：文件名/路径/句柄状态、脏标记、打开/保存/另存为/导入，
- * 以及与之绑定的副作用（标题栏、Ctrl+S 快捷键、保存按钮可用态）。
+ * 文件子系统：工程文件(.dialogue.json)的打开/保存/另存为、旧版 .gml 工程导入迁移、
+ * 导出 GML 产物，以及脏标记、标题栏、Ctrl+S 等绑定副作用。
+ *
+ * 工程文件是唯一权威数据源；.gml 是随时可重新生成的导出产物，不承载工程数据。
  */
 export function useFileHandling({
     state,
@@ -30,13 +46,18 @@ export function useFileHandling({
     selectionDragRef,
     setFileMenuOpen,
     onClearEditing,
+    windowSize,
 }: UseFileHandlingParams) {
     const [currentFileName, setCurrentFileName] = useState<string>("新文件");
     const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
     const [currentFileHandle, setCurrentFileHandle] = useState<FileHandle | null>(null);
     const [isDirty, setDirty] = useState(false);
+    // 当前内容来自旧版 .gml 工程时为 true：保存强制走"另存为"，避免把 JSON 写回 .gml 路径
+    const [isLegacyProject, setIsLegacyProject] = useState(false);
     const suppressDirtyRef = useRef(false);
     const firstStateRef = useRef(true);
+    // 上一次导出 GML 的位置，作为下次导出的默认值
+    const lastGmlPathRef = useRef<string | null>(null);
 
     const isNewUntitled = currentFileName === "新文件" && !currentFilePath && !currentFileHandle;
     const hasWorkspaceContent =
@@ -69,45 +90,98 @@ export function useFileHandling({
         }
     }, [currentFileName, isDirty]);
 
-    const handleSaveAs = useCallback(async (): Promise<boolean> => {
-        if (!isTauri()) return false;
-        const defaultName = ensureGmlName(currentFileName);
-        const filePath = await save({ filters: [{ name: "GML Files", extensions: ["gml"] }], defaultPath: defaultName });
+    /** 保存成功返回写入路径，失败/取消返回 null */
+    const handleSaveAs = useCallback(async (): Promise<string | null> => {
+        if (!isTauri()) return null;
+        // 默认路径：沿用当前工程目录与文件名（补全 .dialogue.json 扩展名）
+        let defaultPath = ensureProjectName(currentFileName);
+        if (currentFilePath) {
+            const { dir, name } = splitPath(currentFilePath);
+            defaultPath = joinPath(dir, ensureProjectName(name));
+        }
+        const filePath = await save({
+            filters: [{ name: "对话工程文件", extensions: ["json"] }],
+            defaultPath,
+        });
 
-        if (!filePath) return false;
-        const content = makeGml(state);
+        if (!filePath) return null;
+        const content = serializeProject(state);
         const result = await invoke<{ success: boolean }>("save_file", { path: filePath, content });
 
         if (result.success) {
             setCurrentFilePath(filePath);
             const fileName = await invoke<string>("get_filename", { path: filePath });
             setCurrentFileName(fileName);
+            setIsLegacyProject(false);
             setDirty(false);
-            return true;
+            return filePath;
         } else {
             alert("保存失败（错误代码：A002）");
-            return false;
+            return null;
         }
-    }, [currentFileName, state]);
+    }, [currentFileName, currentFilePath, state]);
 
-    const handleSave = useCallback(async (): Promise<boolean> => {
-        if (!isTauri()) return false;
-        const content = makeGml(state);
-        // 如果已有文件路径，尝试静默保存
-        if (currentFilePath) {
-            const result = await invoke<{ success: boolean }>("save_file", { path: currentFilePath, content });
-            if (result.success) {
-                setDirty(false);
-                return true;
-            } else {
-                // 静默保存失败，回退到另存为
-                console.warn("Silent save failed, falling back to Save As.");
-                return await handleSaveAs();
-            }
-        } else {
+    /** 保存成功返回写入路径，失败/取消返回 null */
+    const handleSave = useCallback(async (): Promise<string | null> => {
+        if (!isTauri()) return null;
+        // 旧版工程迁移而来时禁止静默覆盖原 .gml，引导另存为新格式
+        if (!currentFilePath || isLegacyProject) {
             return await handleSaveAs();
         }
-    }, [currentFilePath, handleSaveAs, state]);
+        const content = serializeProject(state);
+        const result = await invoke<{ success: boolean }>("save_file", { path: currentFilePath, content });
+        if (result.success) {
+            setDirty(false);
+            return currentFilePath;
+        } else {
+            // 静默保存失败，回退到另存为
+            console.warn("Silent save failed, falling back to Save As.");
+            return await handleSaveAs();
+        }
+    }, [currentFilePath, isLegacyProject, handleSaveAs, state]);
+
+    /** 导出 GML：由工程文件生成引擎用的 .gml 产物 */
+    const handleExportGml = useCallback(async (): Promise<boolean> => {
+        if (!isTauri()) return false;
+        // 默认导出到上次位置；否则放在工程文件旁，同名替换扩展名
+        let defaultPath = lastGmlPathRef.current ?? ensureGmlName(currentFileName);
+        if (!lastGmlPathRef.current && currentFilePath) {
+            const { dir, name } = splitPath(currentFilePath);
+            defaultPath = joinPath(dir, ensureGmlName(stripKnownExtension(name)));
+        }
+        const filePath = await save({
+            filters: [{ name: "GML Files", extensions: ["gml"] }],
+            defaultPath,
+        });
+        if (!filePath) return false;
+
+        const result = await invoke<{ success: boolean }>("save_file", { path: filePath, content: makeGml(state) });
+        if (result.success) {
+            lastGmlPathRef.current = filePath;
+            return true;
+        }
+        alert("导出失败（错误代码：A003）");
+        return false;
+    }, [currentFileName, currentFilePath, state]);
+
+    /** 一键保存并导出：写工程文件 + 写 GML 产物 */
+    const handleSaveAndExport = useCallback(async (): Promise<boolean> => {
+        const savedPath = await handleSave();
+        if (!savedPath) return false;
+
+        // 导出目标：优先上次导出位置（静默写入）；
+        // 没有历史位置时弹一次对话框让用户确认，此后记住位置全程无弹窗
+        if (lastGmlPathRef.current) {
+            const result = await invoke<{ success: boolean }>("save_file", {
+                path: lastGmlPathRef.current,
+                content: makeGml(state),
+            });
+            if (result.success) return true;
+            alert("导出失败（错误代码：A003），请尝试手动「导出 GML」");
+            return false;
+        }
+        return await handleExportGml();
+    }, [handleSave, handleExportGml, state]);
 
     // Ctrl+S / Cmd+S 保存快捷键
     useEffect(() => {
@@ -130,6 +204,51 @@ export function useFileHandling({
         };
     }, [handleSave]);
 
+    // 关闭拦截：有未保存修改时先询问（右上角 X、Alt+F4、系统菜单关闭均生效）
+    const isDirtyRef = useRef(false);
+    useEffect(() => {
+        isDirtyRef.current = isDirty;
+    }, [isDirty]);
+    const handleSaveRef = useRef(handleSave);
+    useEffect(() => {
+        handleSaveRef.current = handleSave;
+    }, [handleSave]);
+
+    useEffect(() => {
+        if (!isTauri()) {
+            // 纯浏览器模式：beforeunload 兜底
+            const handler = (e: BeforeUnloadEvent) => {
+                if (!isDirtyRef.current) return;
+                e.preventDefault();
+                e.returnValue = "";
+            };
+            window.addEventListener("beforeunload", handler);
+            return () => window.removeEventListener("beforeunload", handler);
+        }
+
+        let cancelled = false;
+        let unlisten: (() => void) | null = null;
+        getCurrentWindow().onCloseRequested(async (event) => {
+            if (!isDirtyRef.current) return;
+            event.preventDefault(); // 先拦下，由确认流程决定是否真关
+            const res = await confirm("当前文件尚未保存，是否保存更改？", { title: "未保存", kind: "warning" });
+            if (res) {
+                const saved = await handleSaveRef.current();
+                if (!saved) return; // 保存失败或用户取消了另存为 → 留在编辑器
+            }
+            // 用户选择不保存，或已保存成功：真正关闭。
+            // destroy() 不再触发 CloseRequested（避免递归），需要 core:window:allow-destroy 权限
+            await getCurrentWindow().destroy();
+        }).then((fn) => {
+            if (cancelled) fn();
+            else unlisten = fn;
+        });
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, []);
+
     // 修复另存为按钮状态问题
     useEffect(() => {
         const saveAsButton = document.getElementById("saveAsButton") as HTMLButtonElement | null;
@@ -139,27 +258,48 @@ export function useFileHandling({
         return undefined; // 确保返回 void 类型
     }, [isDirty, currentFilePath]);
 
+    /** 打开成功后的公共收尾：写入状态 + 视野自适应 */
+    const applyLoadedProject = (
+        parsed: EditorState,
+        fileName: string,
+        filePath: string | null,
+        legacy: boolean
+    ) => {
+        suppressDirtyRef.current = true;
+        selectionDragRef.current = null;
+        setSelectionBox(null);
+        setSelectedNodeIds([]);
+        onClearEditing();
+        // 视野不随文件存储：按节点分布自适应铺满视口
+        setState({ ...parsed, view: fitViewToNodes(parsed.nodes, windowSize.w, windowSize.h) });
+        setCurrentFileName(fileName);
+        setCurrentFilePath(filePath);
+        setCurrentFileHandle(null);
+        setIsLegacyProject(legacy);
+        setDirty(false);
+    };
+
     const onImport = (file: File) => {
         const reader = new FileReader();
         reader.onload = (ev) => {
             const text = ev.target?.result as string;
-            const parsed = parseGmlEditorData(text);
-            if (!parsed) {
-                alert("此文件不含编辑器元数据！");
+
+            // 优先按新工程格式解析，失败再尝试旧版 .gml 迁移
+            let project = deserializeProject(text);
+            let legacy = false;
+            if (!project) {
+                project = parseGmlEditorData(text);
+                legacy = project !== null;
+            }
+            if (!project) {
+                alert("无法解析该文件：既不是 .dialogue.json 工程文件，也不含旧版编辑器元数据。");
                 return;
             }
-            suppressDirtyRef.current = true;
-            selectionDragRef.current = null;
-            setSelectionBox(null);
-            setSelectedNodeIds([]);
-            setState(parsed);
-            onClearEditing();
-            setDirty(false);
-            const anyFile = file as any;
-            const path = typeof anyFile.path === "string" ? anyFile.path : null;
-            setCurrentFileName(file.name || "新文件");
-            setCurrentFilePath(path);
-            setCurrentFileHandle(null);
+
+            applyLoadedProject(project, file.name || "新文件", (file as any).path ?? null, legacy);
+            if (legacy) {
+                alert("已从旧版 .gml 工程导入。保存时会引导你另存为 .dialogue.json 新格式，原文件不会被覆盖。");
+            }
         };
         reader.readAsText(file);
     };
@@ -179,24 +319,34 @@ export function useFileHandling({
         }
 
         if (!isTauri()) return;
-        const filePath = await open({ filters: [{ name: "GML Files", extensions: ["gml"] }], multiple: false });
+        const filePath = await open({
+            filters: [
+                { name: "对话工程文件", extensions: ["json"] },
+                { name: "旧版 GML 工程", extensions: ["gml"] },
+            ],
+            multiple: false,
+        });
         if (!filePath) return;
 
         const content = await invoke<string>("read_file", { path: filePath });
-        if (content) {
-            const parsed = parseGmlEditorData(content);
-            if (parsed) {
-                suppressDirtyRef.current = true;
-                selectionDragRef.current = null;
-                setSelectionBox(null);
-                setSelectedNodeIds([]);
-                setState(parsed);
-                setCurrentFilePath(filePath);
-                setCurrentFileName(await invoke<string>("get_filename", { path: filePath }));
-                setDirty(false);
-            } else {
-                alert("无法解析该文件。");
-            }
+        if (!content) return;
+
+        // 优先按新工程格式解析，失败再尝试旧版 .gml 迁移
+        let project = deserializeProject(content);
+        let legacy = false;
+        if (!project) {
+            project = parseGmlEditorData(content);
+            legacy = project !== null;
+        }
+        if (!project) {
+            alert("无法解析该文件：既不是 .dialogue.json 工程文件，也不含旧版编辑器元数据。");
+            return;
+        }
+
+        const fileName = await invoke<string>("get_filename", { path: filePath });
+        applyLoadedProject(project, fileName, filePath, legacy);
+        if (legacy) {
+            alert("已从旧版 .gml 工程导入。保存时会引导你另存为 .dialogue.json 新格式，原文件不会被覆盖。");
         }
     };
 
@@ -209,6 +359,8 @@ export function useFileHandling({
         handleOpenClick,
         handleSave,
         handleSaveAs,
+        handleSaveAndExport,
+        handleExportGml,
         onImport,
         suppressDirtyRef,
     };
