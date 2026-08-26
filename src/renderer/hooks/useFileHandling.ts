@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save, confirm } from "@tauri-apps/plugin-dialog";
+import { watch } from "@tauri-apps/plugin-fs";
 import type { EditorState, FileHandle, SelectionBox } from "../editorTypes";
 import { fitViewToNodes, makeGml, parseGmlEditorData } from "../editorLogic";
 import { deserializeProject, serializeProject } from "../projectFile";
@@ -59,6 +60,20 @@ export function useFileHandling({
     // 上一次导出 GML 的位置，作为下次导出的默认值
     const lastGmlPathRef = useRef<string | null>(null);
 
+    // ---- 外部修改（冲突）检测 ----
+    const currentFilePathRef = useRef<string | null>(null);
+    useEffect(() => {
+        currentFilePathRef.current = currentFilePath;
+    }, [currentFilePath]);
+    // 我们自己写盘的时间戳：短窗口内忽略监听事件，防止自触发
+    const lastSelfWriteRef = useRef(0);
+    // 当前激活的 watch 注销函数
+    const unwatchRef = useRef<(() => void) | null>(null);
+    // 外部修改处理中（弹窗打开期间忽略后续事件）
+    const handlingExternalRef = useRef(false);
+    // 总是引用最新的外部修改处理器
+    const handleExternalChangeRef = useRef<() => Promise<void>>(async () => {});
+
     const isNewUntitled = currentFileName === "新文件" && !currentFilePath && !currentFileHandle;
     const hasWorkspaceContent =
         state.nodes.length > 0 || state.comments.length > 0 || state.edges.length > 0;
@@ -106,6 +121,7 @@ export function useFileHandling({
 
         if (!filePath) return null;
         const content = serializeProject(state);
+        lastSelfWriteRef.current = Date.now();
         const result = await invoke<{ success: boolean }>("save_file", { path: filePath, content });
 
         if (result.success) {
@@ -129,6 +145,7 @@ export function useFileHandling({
             return await handleSaveAs();
         }
         const content = serializeProject(state);
+        lastSelfWriteRef.current = Date.now();
         const result = await invoke<{ success: boolean }>("save_file", { path: currentFilePath, content });
         if (result.success) {
             setDirty(false);
@@ -277,7 +294,97 @@ export function useFileHandling({
         setCurrentFileHandle(null);
         setIsLegacyProject(legacy);
         setDirty(false);
+        // 打开/导入不是自写：清空自写时间戳，避免吞掉紧接着的外部修改事件
+        lastSelfWriteRef.current = 0;
     };
+
+    /** 外部修改后的重载：保留当前视野，不改变文件名/路径 */
+    const applyExternalReload = (project: EditorState) => {
+        suppressDirtyRef.current = true;
+        selectionDragRef.current = null;
+        setSelectionBox(null);
+        setSelectedNodeIds([]);
+        onClearEditing();
+        setState((prev) => ({ ...project, view: prev.view }));
+        setDirty(false);
+    };
+
+    /** 外部修改处理：干净则静默重载；有未保存修改则让用户选择 */
+    const handleExternalChange = async () => {
+        if (handlingExternalRef.current) return;
+        const path = currentFilePathRef.current;
+        if (!path) return;
+        // 我们自己写盘后 1s 内的监听事件一律忽略（含写入到事件送达的窗口）
+        if (Date.now() - lastSelfWriteRef.current < 1000) return;
+
+        handlingExternalRef.current = true;
+        try {
+            let text: string | null = null;
+            try {
+                text = await invoke<string>("read_file", { path });
+            } catch {
+                return; // 文件被删除/移动，忽略
+            }
+            if (text == null) return;
+
+            let project = deserializeProject(text);
+            if (!project) project = parseGmlEditorData(text);
+            if (!project) {
+                alert("检测到对话工程文件被外部修改，但无法解析其内容。请人工检查该文件。");
+                return;
+            }
+
+            if (!isDirtyRef.current) {
+                applyExternalReload(project);
+                return;
+            }
+            const res = await confirm(
+                "对话工程文件已被外部修改（例如 AI Agent 或文本编辑器）。\n「重新加载」将丢弃当前未保存的本地修改；「保留本地」则下次保存会覆盖外部改动。",
+                { title: "文件已被外部修改", kind: "warning" }
+            );
+            if (res) applyExternalReload(project);
+            // res === false → 保留本地，下次保存覆盖外部改动
+        } finally {
+            handlingExternalRef.current = false;
+        }
+    };
+    handleExternalChangeRef.current = handleExternalChange;
+
+    // 监听当前工程文件，检测外部修改（冲突检测）
+    useEffect(() => {
+        if (unwatchRef.current) {
+            unwatchRef.current();
+            unwatchRef.current = null;
+        }
+        if (!isTauri() || !currentFilePath) return;
+
+        const target = currentFilePath;
+        // 监听父目录比监听单文件更稳：外部编辑器常以"临时文件+改名"原子替换，
+        // 单文件监听会因文件句柄失效而漏报。这里按路径精确过滤掉相邻文件的动静。
+        const { dir } = splitPath(target);
+        let cancelled = false;
+        watch(dir, (event) => {
+            const normTarget = target.toLowerCase();
+            if (!event.paths.some((p) => p.toLowerCase() === normTarget)) return;
+            void handleExternalChangeRef.current();
+        }, { delayMs: 300 })
+            .then((unwatch) => {
+                if (cancelled || unwatchRef.current) {
+                    unwatch();
+                    return;
+                }
+                unwatchRef.current = unwatch;
+            })
+            .catch((err) => console.warn("文件监听注册失败:", err));
+
+        return () => {
+            cancelled = true;
+            if (unwatchRef.current) {
+                unwatchRef.current();
+                unwatchRef.current = null;
+            }
+        };
+    }, [currentFilePath]);
 
     const onImport = (file: File) => {
         const reader = new FileReader();

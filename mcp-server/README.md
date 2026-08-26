@@ -41,7 +41,8 @@ claude mcp add dialogue-editor -- node C:\Project\Website\Dialogue-Editor\mcp-se
 - 所有工具都显式传 `path`（无会话状态）。
 - 修改类工具只写 `.dialogue.json`；旧版 `.gml` 工程只读，需先在编辑器里另存为新格式。
 - GML 导出是显式动作，不会随修改自动发生。
-- Agent 操作某工程时，请勿同时在编辑器中打开并保存该工程（暂无冲突检测）。
+- 编辑器已内置冲突检测：打开某工程时若文件被外部（Agent/文本编辑器）改动，
+  干净状态自动重载；有未保存修改时弹窗让用户选择「重新加载」或「保留本地」。
 
 ## 测试夹具
 
