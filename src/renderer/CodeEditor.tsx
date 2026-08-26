@@ -13,29 +13,10 @@ import {
 import { createGmlLanguage, gmlKeywordList, gmlBuiltinList } from "./gmlLanguage";
 import { tags as t } from "@lezer/highlight";
 import { Character, charaMotionAndExpressionInfo } from "./editorTypes";
+import type { CodeStyleProfile, KeywordGroup, KeywordType } from "./codeStyle";
 
-export type KeywordType = "function" | "variable" | "keyword" | "constant";
-
-export type KeywordGroup = {
-    id: string;
-    name: string;        // 分组名，如 "内置函数", "自定义宏"
-    type: KeywordType;   // 类型，如 "function", "macro"，可用于补全时的图标区分
-    colorLight: string;  // 浅色模式颜色
-    colorDark: string;   // 深色模式颜色
-    keywords: string[];  // 具体的关键字列表
-};
-
-export type CodeStyleProfile = {
-    name: string;
-    fontFamily: string;
-    fontSize: number;
-
-    characterColorLight: string;
-    characterColorDark: string;
-    characters: Character[];
-
-    keywordGroups: KeywordGroup[]; 
-};
+// 配色类型定义已抽离到 codeStyle.ts（供 editorTypes 与 Node 环境复用），此处转发保持兼容
+export type { CodeStyleProfile, KeywordGroup, KeywordType };
 
 export interface CodeEditorProps {
     value: string;

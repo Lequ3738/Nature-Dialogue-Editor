@@ -29,7 +29,7 @@ function isNodeOverlapped(candidateX: number, candidateY: number, nodes: Node[])
     });
 }
 
-function findFreeNodePosition(
+export function findFreeNodePosition(
     centerX: number,
     centerY: number,
     nodes: Node[],
@@ -63,6 +63,55 @@ function findFreeNodePosition(
 
 export function hasEdge(state: EditorState, fromId: number, type: EdgeType): boolean {
     return state.edges.some((e) => e.fromId === fromId && e.type === type);
+}
+
+export type ConnectCheck = { ok: boolean; reason?: string };
+
+/**
+ * 连线规则校验（画布交互与 MCP server 共用的不变量）：
+ * - 不能连接自身；两端节点必须存在
+ * - 结束节点不能向外连接
+ * - 开始节点只能被条件节点连入
+ */
+export function canConnect(state: EditorState, fromId: number, toId: number): ConnectCheck {
+    if (fromId === toId) return { ok: false, reason: "不能连接节点自身" };
+    const from = state.nodes.find((n) => n.id === fromId);
+    const to = state.nodes.find((n) => n.id === toId);
+    if (!from) return { ok: false, reason: `起点节点 #${fromId} 不存在` };
+    if (!to) return { ok: false, reason: `终点节点 #${toId} 不存在` };
+    if (from.type === "end") return { ok: false, reason: "结束节点不能向外连接" };
+    if (to.type === "start" && from.type !== "condition") {
+        return { ok: false, reason: "开始节点只能被条件节点连入" };
+    }
+    return { ok: true };
+}
+
+/**
+ * 应用连线（含覆盖规则）：条件节点的 true/false 边与开始节点的出边各类型只保留一条，
+ * 普通节点的 default 边允许多条；重复边不重复添加。
+ */
+export function applyConnect(
+    state: EditorState,
+    fromId: number,
+    toId: number,
+    type: EdgeType
+): { state: EditorState; changed: boolean } {
+    const check = canConnect(state, fromId, toId);
+    if (!check.ok) throw new Error(check.reason);
+
+    let edges = state.edges;
+    if (type === "true" || type === "false") {
+        edges = edges.filter((e) => !(e.fromId === fromId && e.type === type));
+    } else {
+        const from = state.nodes.find((n) => n.id === fromId)!;
+        if (from.type === "start") {
+            edges = edges.filter((e) => !(e.fromId === fromId && e.type === type));
+        }
+    }
+
+    const exists = edges.some((e) => e.fromId === fromId && e.toId === toId && e.type === type);
+    if (exists) return { state, changed: false };
+    return { state: { ...state, edges: [...edges, { fromId, toId, type }] }, changed: true };
 }
 
 function getNodeDefaultColor(type: NodeType): string {
@@ -135,38 +184,21 @@ export function startConnect(
     const targetNode = state.nodes.find(n => n.id === destinationNodeId);
 
     if (!state.connecting) {
-        if (targetNode?.type === "end") {  // 结束节点不能向外连接
+        if (!targetNode || targetNode.type === "end") {  // 结束节点不能向外连接
             return state;
         }
-
         return { ...state, connecting: { fromId: destinationNodeId, type: portType } };
     }
 
     const { fromId, type } = state.connecting;
-    const sourceNode = state.nodes.find(n => n.id === fromId);
 
     if (fromId !== destinationNodeId) {
-        // 开始节点不能被对话和结束节点连入
-        if (targetNode?.type === "start" && sourceNode?.type !== "condition") {
-            return { ...state, connecting: null }; // 重置连线状态
+        // 规则不满足时与旧行为一致：静默重置连线状态
+        if (!canConnect(state, fromId, destinationNodeId).ok) {
+            return { ...state, connecting: null };
         }
-
-        // 条件节点：true/false 各只能有一条（覆盖旧的同类型连线）
-        // 普通节点：default 允许多条（不覆盖）
-        let nextEdges: Edge[] = state.edges;
-        if (type === "true" || type === "false" || sourceNode?.type === "start") {
-            nextEdges = nextEdges.filter((edge) => !(edge.fromId === fromId && edge.type === type));
-        }
-
-        // 防止重复添加同一条连线
-        const exists = nextEdges.some(
-            (e) => e.fromId === fromId && e.toId === destinationNodeId && e.type === type
-        );
-        if (!exists) {
-            nextEdges = [...nextEdges, { fromId, toId: destinationNodeId, type }];
-        }
-
-        return { ...state, edges: nextEdges, connecting: null };
+        const { state: withEdge } = applyConnect(state, fromId, destinationNodeId, type);
+        return { ...withEdge, connecting: null };
     }
 
     return { ...state, connecting: null };

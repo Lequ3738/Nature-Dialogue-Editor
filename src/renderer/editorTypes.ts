@@ -1,4 +1,4 @@
-import { CodeStyleProfile } from "./CodeEditor";
+import type { CodeStyleProfile } from "./codeStyle";
 
 export type EdgeType = "default" | "true" | "false";
 export type FuncNodeType = "node" | "condition" | "start" | "end";

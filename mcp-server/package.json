@@ -1,0 +1,20 @@
+{
+    "name": "dialogue-editor-mcp",
+    "version": "1.0.0",
+    "description": "MCP server for the Dialogue Editor project files (.dialogue.json)",
+    "license": "ISC",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.js",
+        "typecheck": "tsc --noEmit",
+        "test": "esbuild test/run.ts --bundle --platform=node --format=cjs --outfile=test/dist-run.cjs && node test/dist-run.cjs"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.0",
+        "zod": "^3.24.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.2",
+        "typescript": "^5.7.3"
+    }
+}

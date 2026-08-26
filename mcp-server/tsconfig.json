@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "types": ["node"]
+    },
+    "include": ["src/**/*", "../src/renderer/editorTypes.ts", "../src/renderer/codeStyle.ts", "../src/renderer/projectFile.ts", "../src/renderer/editorLogic.ts", "../src/renderer/graphOps.ts", "test/**/*"]
+}

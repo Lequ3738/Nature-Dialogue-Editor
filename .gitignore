@@ -12,6 +12,9 @@ build/
 src-tauri/target/
 src-tauri/gen/
 
+# MCP server test bundle
+mcp-server/test/dist-*.cjs
+
 # OS files
 .DS_Store
 Thumbs.db
