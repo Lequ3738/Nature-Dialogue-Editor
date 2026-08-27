@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { deserializeProject, serializeProject } from "../../src/renderer/projectFile";
 import { makeGml, parseGmlEditorData } from "../../src/renderer/editorLogic";
 import { canConnect, applyConnect } from "../../src/renderer/editorLogic";
-import { upsertNode, removeNodeCascade, disconnect, validateGraph, buildDialogue } from "../../src/renderer/graphOps";
+import { upsertNode, removeNodeCascade, disconnect, validateGraph, buildDialogue, upsertVariable, removeVariable } from "../../src/renderer/graphOps";
 import { createInitialState, type EditorState } from "../../src/renderer/editorTypes";
 
 let failed = 0;
@@ -171,6 +171,47 @@ function baseState(): EditorState {
     // 工程文件往返保留 tag
     const roundTrip = deserializeProject(serializeProject(r.state))!;
     check("标记：JSON 往返保留 tag", roundTrip.nodes.find((n) => n.id === 2)?.tag === "welcome");
+}
+
+// ========== 6. 自定义变量 ==========
+
+{
+    let s = createInitialState();
+    const r1 = upsertVariable(s, { name: "eventDialogNothing", value: 1 });
+    check("变量：新建 number 类型", r1.created && r1.variable.type === "number" && r1.variable.value === 1);
+    check("变量：默认不持久化", r1.variable.persistent === false);
+    const r2 = upsertVariable(r1.state, { name: "eventDialogNothing", persistent: true, value: 3 });
+    check("变量：同名更新", !r2.created && r2.state.variables.length === 1 && r2.variable.persistent === true && r2.variable.value === 3);
+    const r3 = upsertVariable(r2.state, { name: "greeting", value: "你好", type: "string" });
+    check("变量：字符串类型", r3.variable.type === "string" && r3.variable.value === "你好");
+    const r4 = upsertVariable(r3.state, { name: "num", value: "42" });
+    check("变量：数字值字符串自动按 string 推断", r4.variable.type === "string" && r4.variable.value === "42");
+    const r5 = upsertVariable(r4.state, { name: "num", value: 7, type: "number" });
+    check("变量：类型切换自动转换", r5.variable.type === "number" && r5.variable.value === 7);
+
+    // 非法名/空名
+    let threw = false;
+    try { upsertVariable(r5.state, { name: "1bad" }); } catch { threw = true; }
+    check("变量：非法标识符被拒", threw);
+
+    // 校验：重名与非法名
+    const dup = upsertVariable(r5.state, { name: "num", value: 1 });
+    const dupIssues = validateGraph({ ...dup.state, variables: [...dup.state.variables, { ...dup.variable, id: "x" }] });
+    check("变量：重名被校验捕获", dupIssues.some((i) => i.message.includes("重复定义")));
+    const badNameIssues = validateGraph({ ...dup.state, variables: [{ id: "a", name: "bad-name", value: 0, type: "number", persistent: false }] });
+    check("变量：非法名被校验捕获", badNameIssues.some((i) => i.message.includes("不是合法的 GML 标识符")));
+
+    // 导出与序列化
+    const gml = makeGml(r2.state);
+    check("变量：persistent 导出 scrDefault", gml.includes('scrDefault("eventDialogNothing", 3)'));
+    const gml2 = makeGml(r5.state);
+    check("变量：非持久化导出直接赋值", gml2.includes("greeting = \"你好\";") && gml2.includes("num = 7;"));
+    const rt = deserializeProject(serializeProject(r5.state))!;
+    check("变量：JSON 往返保留", rt.variables.length === 3 && rt.variables.some((v) => v.name === "eventDialogNothing" && v.persistent === true));
+
+    // 删除
+    const rm = removeVariable(r5.state, "greeting");
+    check("变量：按名删除", rm.removed === 1 && !rm.state.variables.some((v) => v.name === "greeting"));
 }
 
 console.log(failed === 0 ? "\n全部通过" : `\n${failed} 项失败`);

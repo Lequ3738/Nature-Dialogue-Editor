@@ -8,6 +8,7 @@ import { deserializeProject, serializeProject } from "../../src/renderer/project
 import { makeGml, parseGmlEditorData } from "../../src/renderer/editorLogic";
 import {
     upsertNode, removeNodeCascade, disconnect, validateGraph, buildDialogue, applyConnect,
+    upsertVariable, removeVariable,
     type ValidationIssue,
 } from "../../src/renderer/graphOps";
 
@@ -97,7 +98,7 @@ server.tool(
                 forbiddenExpression: s.forbiddenExpression,
                 idCounter: s.idCounter,
                 nodes: byType, comments: s.comments.length, edges: s.edges.length,
-                variables: s.variables.map((v) => ({ name: v.name, value: v.value, persistent: v.persistent })),
+                variables: s.variables.map((v) => ({ name: v.name, value: v.value, persistent: v.persistent, type: v.type })),
                 characters: [...new Set(s.nodes.map((n) => n.character?.constantName).filter(Boolean))],
                 validationIssues: issues,
             });
@@ -232,6 +233,45 @@ server.tool(
             const s = loadProject(path);
             const issues = validateGraph(s);
             return ok({ passed: issues.every((i) => i.level !== "error"), issues });
+        } catch (err) { return fail(err); }
+    }
+);
+
+server.tool(
+    "upsert_variable",
+    "新建或更新自定义变量（按变量名匹配，存在则更新，否则新建）。变量名须为合法 GML 标识符；type 切换时值会自动转换",
+    {
+        path: z.string().describe("工程文件路径"),
+        name: z.string().describe("变量名（如 eventDialogNothing）"),
+        value: z.union([z.string(), z.number()]).optional().describe("变量值；省略时按类型取默认（number=0 / string=\"\"）"),
+        type: z.enum(["number", "string"]).optional().describe("变量类型；省略时从 value 推断（字符串→string，数字→number）"),
+        persistent: z.boolean().optional().describe("是否持久化：true 生成 scrDefault(\"name\", value)，false 生成 name = value"),
+    },
+    ({ path, name, value, type, persistent }) => {
+        try {
+            assertMutable(path);
+            const s = loadProject(path);
+            const result = upsertVariable(s, { name, value, type, persistent });
+            saveProject(path, result.state);
+            return ok({ created: result.created, variable: result.variable, totalVariables: result.state.variables.length });
+        } catch (err) { return fail(err); }
+    }
+);
+
+server.tool(
+    "remove_variable",
+    "按变量名删除自定义变量",
+    {
+        path: z.string().describe("工程文件路径"),
+        name: z.string().describe("要删除的变量名"),
+    },
+    ({ path, name }) => {
+        try {
+            assertMutable(path);
+            const s = loadProject(path);
+            const result = removeVariable(s, name);
+            saveProject(path, result.state);
+            return ok({ removed: result.removed, totalVariables: result.state.variables.length });
         } catch (err) { return fail(err); }
     }
 );

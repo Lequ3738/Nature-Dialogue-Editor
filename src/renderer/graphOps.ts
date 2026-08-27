@@ -1,4 +1,4 @@
-import type { EditorState, EdgeType, FuncNodeType, Node } from "./editorTypes";
+import type { CustomVariable, EditorState, EdgeType, FuncNodeType, Node } from "./editorTypes";
 import { characterNone } from "./editorTypes";
 import { applyConnect, canConnect, findFreeNodePosition, snapToGrid, GRID_SIZE, type ConnectCheck } from "./editorLogic";
 
@@ -150,6 +150,76 @@ export interface ValidationIssue {
     message: string;
 }
 
+/** 合法的 GML 变量名（字母/下划线开头，仅含字母数字下划线） */
+export const GML_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export interface UpsertVariableInput {
+    /** 变量名（新建/更新的唯一键，须为合法 GML 标识符） */
+    name: string;
+    value?: string | number;
+    type?: "number" | "string";
+    /** 是否持久化（生成 scrDefault 而非直接赋值） */
+    persistent?: boolean;
+}
+
+/**
+ * 新建或更新自定义变量：按变量名查找，存在则更新，否则新建。
+ * 类型切换时与编辑器 UI 一致自动转换值（number ← Number||0；string ← String）。
+ */
+export function upsertVariable(state: EditorState, input: UpsertVariableInput): {
+    state: EditorState; created: boolean; variable: CustomVariable;
+} {
+    const name = input.name.trim();
+    if (!name) throw new Error("变量名不能为空");
+    if (!GML_IDENTIFIER_RE.test(name)) {
+        throw new Error(`变量名 "${name}" 不是合法的 GML 标识符（须以字母/下划线开头，仅含字母数字下划线）`);
+    }
+
+    let type = input.type;
+    if (type !== "number" && type !== "string") {
+        type = typeof input.value === "string" ? "string" : "number";
+    }
+    const value = type === "string"
+        ? String(input.value ?? "")
+        : Number(input.value ?? 0);
+
+    const idx = state.variables.findIndex((v) => v.name === name);
+    if (idx >= 0) {
+        const old = state.variables[idx];
+        const next: CustomVariable = {
+            ...old,
+            value,
+            type,
+            persistent: input.persistent ?? old.persistent,
+        };
+        const variables = [...state.variables];
+        variables[idx] = next;
+        return { state: { ...state, variables }, created: false, variable: next };
+    }
+
+    const variable: CustomVariable = {
+        id: `var_${name}`,
+        name,
+        value,
+        type,
+        persistent: input.persistent ?? false,
+    };
+    return {
+        state: { ...state, variables: [...state.variables, variable] },
+        created: true,
+        variable,
+    };
+}
+
+/** 按变量名删除自定义变量，返回删除条数 */
+export function removeVariable(state: EditorState, name: string): {
+    state: EditorState; removed: number;
+} {
+    const before = state.variables.length;
+    const variables = state.variables.filter((v) => v.name !== name);
+    return { state: { ...state, variables }, removed: before - variables.length };
+}
+
 /** 图结构校验：错误会导致生成代码不符合预期，警告为可运行但可疑的结构 */
 export function validateGraph(state: EditorState): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
@@ -231,6 +301,18 @@ export function validateGraph(state: EditorState): ValidationIssue[] {
                 issues.push({ level: "warning", message: `对话节点 #${n.id}（${nodeLabel(n)}）没有后继也不邻接结束节点，对话会卡在这里` });
             }
         }
+    }
+
+    // 自定义变量：非法标识符与重名都会生成无法编译/行为异常的代码
+    const seenVarNames = new Set<string>();
+    for (const v of state.variables) {
+        if (!GML_IDENTIFIER_RE.test(v.name)) {
+            issues.push({ level: "error", message: `自定义变量名 "${v.name}" 不是合法的 GML 标识符，生成的代码无法编译` });
+        }
+        if (seenVarNames.has(v.name)) {
+            issues.push({ level: "error", message: `自定义变量名 "${v.name}" 重复定义，后定义的会静默覆盖前者` });
+        }
+        seenVarNames.add(v.name);
     }
 
     return issues;
