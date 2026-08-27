@@ -55,6 +55,8 @@ export interface UpsertNodeInput {
     en?: string;
     code?: string;
     color?: string;
+    /** 节点标记（仅对话节点用，导出为 /// 注释） */
+    tag?: string;
     characterConstantName?: string;
     /** 位置；省略时自动找空位 */
     x?: number;
@@ -78,6 +80,7 @@ export function upsertNode(state: EditorState, input: UpsertNodeInput): {
             en: input.en ?? old.en,
             code: input.code ?? old.code,
             color: input.color ?? old.color,
+            tag: input.tag ?? old.tag ?? "",
             character: input.characterConstantName
                 ? resolveCharacter(state, input.characterConstantName)
                 : old.character,
@@ -110,6 +113,7 @@ export function upsertNode(state: EditorState, input: UpsertNodeInput): {
         en: input.en ?? "",
         code: input.code ?? "",
         color: input.color ?? "#7289da",
+        tag: input.tag ?? "",
         character: resolveCharacter(state, input.characterConstantName ?? characterNone.constantName),
     };
     return {
@@ -259,6 +263,8 @@ export interface DialogueSpecNode {
     cn?: string;
     en?: string;
     code?: string;
+    /** 节点标记（仅对话节点用，导出为 /// 注释） */
+    tag?: string;
     characterConstantName?: string;
 }
 
@@ -298,6 +304,7 @@ export function buildDialogue(state: EditorState, spec: BuildDialogueSpec): {
             cn: sn.cn,
             en: sn.en,
             code: sn.code,
+            tag: sn.tag,
             characterConstantName: sn.characterConstantName,
             nearId: spec.nearId,
         });

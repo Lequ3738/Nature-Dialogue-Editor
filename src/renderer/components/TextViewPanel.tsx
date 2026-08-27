@@ -78,6 +78,7 @@ export default function TextViewPanel({
                 node.en,
                 node.code,
                 node.color,
+                node.tag,
                 node.character?.name ?? ""
             ];
             return matchFields.some((value) => 
@@ -93,7 +94,7 @@ export default function TextViewPanel({
     }), [theme]);
 
     // 节点内容更新
-    const applyNodePatch = (id: number, patch: Partial<Pick<Node, "cn" | "en" | "code" | "color">>) => {
+    const applyNodePatch = (id: number, patch: Partial<Pick<Node, "cn" | "en" | "code" | "color" | "tag">>) => {
         setState((prev) => ({
             ...prev,
             nodes: prev.nodes.map((node) => (node.id === id ? { ...node, ...patch } : node)),
@@ -370,6 +371,7 @@ export default function TextViewPanel({
                                 node.en,
                                 node.code,
                                 node.color,
+                                node.tag,
                                 node.character?.name ?? "",
                             ].some((text) => fieldMatch(String(text), searchText, caseSensitive, wholeWord));
                             return (
@@ -412,8 +414,31 @@ export default function TextViewPanel({
                                                 }}></span>
                                                 {node.color}
                                             </span>
+                                            {node.type === "node" && node.tag && (
+                                                <span style={{
+                                                    fontSize: 11,
+                                                    lineHeight: 1,
+                                                    padding: "3px 8px",
+                                                    borderRadius: 999,
+                                                    background: "color-mix(in srgb, var(--accent) 22%, transparent)",
+                                                    border: "1px solid color-mix(in srgb, var(--accent) 55%, transparent)",
+                                                    color: "var(--accent)",
+                                                }}>
+                                                    🔖 {node.tag}
+                                                </span>
+                                            )}
                                         </div>
                                         <div style={{ flex: 1 }} />
+                                        {node.type === "node" && (
+                                            <>
+                                            <label>标记：</label>
+                                            <input style={{ width: 150 }}
+                                                className="textarea-styled"
+                                                value={node.tag ?? ""}
+                                                onChange={(e) => applyNodePatch(node.id, { tag: e.target.value })}
+                                            />
+                                            </>
+                                        )}
                                         <button
                                             className="secondary-button"
                                             onClick={() => onFocusGraphNode(node.id)}
@@ -427,6 +452,7 @@ export default function TextViewPanel({
                                             删除
                                         </button>
                                     </div>
+                                    
                                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                                         <label style={{ display: "grid", gap: 6 }}>
                                             <span style={{ fontSize: 12, opacity: 0.75 }}>中文文本</span>

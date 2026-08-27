@@ -79,6 +79,8 @@ export const DraggableNode = React.memo(({
                 {!isStart && (
                     <span
                         style={{ cursor: "pointer" }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
                         onClick={(e) => {
                             e.stopPropagation();
                             openModal(n.id);
@@ -100,6 +102,25 @@ export const DraggableNode = React.memo(({
                         n.code || <><span style={{ color: "#888" }}>请添加有效的代码语句。</span></>
                     ) : (
                         <>
+                            {n.tag && (
+                                <>
+                                <div
+                                    style={{
+                                        display: "inline-block",
+                                        fontSize: 11,
+                                        lineHeight: 1,
+                                        padding: "3px 8px",
+                                        marginBottom: 6,
+                                        borderRadius: 999,
+                                        background: "color-mix(in srgb, var(--accent) 22%, transparent)",
+                                        border: "1px solid color-mix(in srgb, var(--accent) 55%, transparent)",
+                                        color: "var(--accent)",
+                                    }}
+                                >
+                                    🔖 {n.tag}
+                                </div><br></br>
+                                </>
+                            )}
                             <span style={{ color: "#888" }}>中文：</span>
                             {n.cn || <><span style={{ color: "#888" }}>无内容。</span></>}
                             <hr style={{ opacity: 0.2 }} />
@@ -207,6 +228,8 @@ export const DraggableNode = React.memo(({
                         {isStart && (
                             <span
                                 style={{ cursor: "pointer" }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     openModal(n.id);
@@ -229,6 +252,7 @@ export const DraggableNode = React.memo(({
         prev.n.en === next.n.en &&
         prev.n.code === next.n.code &&
         prev.n.color === next.n.color &&
+        prev.n.tag === next.n.tag &&
         prev.n.character === next.n.character &&
         prev.isSelected === next.isSelected &&
         prev.isConnecting === next.isConnecting &&

@@ -33,7 +33,7 @@ export function AboutScreen({ theme }: { theme: 'light' | 'dark' })
                     opacity: 0.6,
                     letterSpacing: '1px'
                 }}>
-                    版本 1.0.0
+                    版本 1.1.0
                 </p>
 
                 {/* 分割线 */}

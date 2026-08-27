@@ -120,6 +120,7 @@ server.tool(
                     id: n.id, type: n.type,
                     cn: n.cn, en: n.en,
                     code: n.code || undefined,
+                    tag: n.tag || undefined,
                     character: n.character?.constantName,
                     x: n.x, y: n.y,
                 })),
@@ -138,6 +139,7 @@ const upsertShape = {
     en: z.string().optional().describe("英文文本"),
     code: z.string().optional().describe("节点执行代码（GML，this 指代说话角色）"),
     color: z.string().optional().describe("节点颜色 #rrggbb"),
+    tag: z.string().optional().describe("节点标记（仅对话节点，导出为代码首行 /// 注释）"),
     characterConstantName: z.string().optional().describe("说话角色常量名（如 npc_haming）；未知常量会自动登记新角色"),
     x: z.number().optional().describe("画布坐标 x（省略则自动布局）"),
     y: z.number().optional().describe("画布坐标 y"),
@@ -257,6 +259,7 @@ const specNodeSchema = z.object({
     cn: z.string().optional(),
     en: z.string().optional(),
     code: z.string().optional(),
+    tag: z.string().optional().describe("节点标记（仅对话节点，导出为 /// 注释）"),
     characterConstantName: z.string().optional(),
 });
 

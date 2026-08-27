@@ -16,7 +16,7 @@ function check(name: string, cond: boolean) {
 
 const noChar = { id: "SPEC001", name: "无角色", constantName: "npc_noone", remark: "" };
 function mkNode(id: number, type: EditorState["nodes"][number]["type"], x = 0, y = 0, cn = "") {
-    return { id, type, x, y, cn, en: "", code: "", color: "#7289da", character: noChar };
+    return { id, type, x, y, cn, en: "", code: "", color: "#7289da", character: noChar, tag: "" };
 }
 
 // ========== 1. 黄金文件回归：真实工程 迁移→序列化→导出 全链路 ==========
@@ -152,6 +152,25 @@ function baseState(): EditorState {
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+}
+
+// ========== 5. 节点标记 → GML ==========
+
+{
+    const s = baseState();
+    const r = upsertNode(s, { id: 2, tag: "welcome" });
+    const gml = makeGml(r.state);
+    check("标记：///welcome 出现在代码块首行", gml.includes("ds_graph_node_add(_graph, '\n    ///welcome\n"));
+    const r2 = upsertNode(r.state, { id: 2, tag: "" });
+    check("标记：清空后无 /// 行", !makeGml(r2.state).includes("///"));
+    const built = buildDialogue(createInitialState(), {
+        nodes: [{ cn: "x", tag: "village" }],
+        edges: [],
+    });
+    check("标记：buildDialogue 透传 tag", makeGml(built.state).includes("    ///village\n"));
+    // 工程文件往返保留 tag
+    const roundTrip = deserializeProject(serializeProject(r.state))!;
+    check("标记：JSON 往返保留 tag", roundTrip.nodes.find((n) => n.id === 2)?.tag === "welcome");
 }
 
 console.log(failed === 0 ? "\n全部通过" : `\n${failed} 项失败`);

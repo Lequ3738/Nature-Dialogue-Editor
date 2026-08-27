@@ -48,6 +48,7 @@ function normalizeNode(n: any): Node | null {
         en: asString(n.en),
         code: asString(n.code),
         color: asString(n.color, "#7289da"),
+        tag: asString(n.tag),
         character:
             n.character && typeof n.character === "object"
                 ? { ...characterNone, ...n.character }

@@ -10,7 +10,7 @@ export function useNodeEditing(
     setState: Dispatch<SetStateAction<EditorState>>
 ) {
     const [editingId, setEditingId] = useState<number | null>(null);
-    const [draft, setDraft] = useState<ModalDraft>({ cn: "", en: "", code: "", color: "#7289da", character: characterNone });
+    const [draft, setDraft] = useState<ModalDraft>({ cn: "", en: "", code: "", color: "#7289da", character: characterNone, tag: "" });
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [commentDraft, setCommentDraft] = useState<string>("");
     const [commentColorDraft, setCommentColorDraft] = useState<string>("#5865f2");
@@ -18,7 +18,7 @@ export function useNodeEditing(
     const openModal = (id: number) => {
         setEditingId(id);
         const n = state.nodes.find((x) => x.id === id);
-        if (n) setDraft({ cn: n.cn, en: n.en, code: n.code, color: n.color, character: n.character });
+        if (n) setDraft({ cn: n.cn, en: n.en, code: n.code, color: n.color, character: n.character, tag: n.tag ?? "" });
     };
 
     const editingNode = useMemo(() => {
@@ -76,7 +76,8 @@ export function useNodeEditing(
                     ...n,
                     cn: draft.cn, en: draft.en,
                     code: draft.code, color: draft.color,
-                    character: draft.character
+                    character: draft.character,
+                    tag: draft.tag,
                 };
             });
             return { ...prev, nodes: nextNodes };

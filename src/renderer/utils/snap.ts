@@ -113,9 +113,14 @@ function animateNodeToSnapPosition(
         endX: number;
         endY: number;
     }[];
+    // 只对真正发生位移的节点做吸附动画；零位移（如纯点击）不重写节点数组，
+    // 避免触发脏标记/无意义的重复渲染
+    const movableAnimations = nodeAnimations.filter(
+        (a) => a.endX !== a.startX || a.endY !== a.startY
+    );
 
     // 无需要动画的节点，直接完成
-    if (nodeAnimations.length === 0) {
+    if (movableAnimations.length === 0) {
         onComplete();
         return;
     }
@@ -129,7 +134,7 @@ function animateNodeToSnapPosition(
 
         // 计算当前帧的节点坐标
         const updatedNodes = startNodes.map((node) => {
-            const anim = nodeAnimations.find((a) => a.id === node.id);
+            const anim = movableAnimations.find((a) => a.id === node.id);
             if (!anim) return node;
             const currentX = anim.startX + (anim.endX - anim.startX) * easeProgress;
             const currentY = anim.startY + (anim.endY - anim.startY) * easeProgress;

@@ -17,6 +17,8 @@ export interface ModalDraft {
     code: string;
     color: string;
     character: Character;
+    /** 节点标记：仅对话节点可用，导出为代码块首行的 /// 注释 */
+    tag: string;
 }
 
 export interface Node {
@@ -29,6 +31,8 @@ export interface Node {
     code: string;
     color: string;
     character: Character;
+    /** 节点标记：仅对话节点可用，导出为代码块首行的 /// 注释 */
+    tag: string;
 }
 
 export interface CommentBox {

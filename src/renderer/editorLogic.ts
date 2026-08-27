@@ -171,7 +171,8 @@ export function addObject(
         en: "",
         code: "",
         color: getNodeDefaultColor(type),
-        character: characterNone
+        character: characterNone,
+        tag: "",
     };
     return { ...state, nodes: [...state.nodes, next], idCounter: state.idCounter + 1 };
 }
@@ -401,6 +402,8 @@ export function makeGml(state: EditorState): string {
         );
 
         gml += `_node[${n.id}] = ds_graph_node_add(_graph, '\n`;
+        // 节点标记：代码块第一行以 /// 注释形式导出（仅对话节点有标记时）
+        if (n.tag) gml += `    ///${n.tag}\n`;
         if (!isChoiceResult) gml += `    curCharacter = ${n.character.constantName};\n\n`;
         gml += `    var _text; \n`;
         gml += `    _text[lang_cn] = "${escapeGmlString(n.cn)}";\n`;

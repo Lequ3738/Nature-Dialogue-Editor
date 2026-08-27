@@ -88,8 +88,15 @@ export function EditingNodeWindows({
                             节点配置
                         </h3>
                         <div className="color-row">
+                            <label>标记：</label>
+                            <input style={{ width: 150 }}
+                                id="m-tag"
+                                className="textarea-styled"
+                                value={draft.tag}
+                                onChange={(e) => setDraft((d) => ({ ...d, tag: e.target.value }))}
+                            />
                             <label>当前角色：</label>
-                            <select style={{ width: 250 }}
+                            <select style={{ width: 200 }}
                                 value={draft.character.constantName}
                                 onChange={e => setDraft(d => ({ ...d, 
                                     character: codeProfile.characters.find(
